@@ -1,3 +1,8 @@
+
+--	Functions.Notify({Title = "Used For Notifications."})
+--  Disabled = not Functions.CheckCompatability({"require"}), DisabledTooltip = Globals.IncompatibleMessage
+-- 	Risky = Floor ~= "Mines" (Means it only works on mines)
+
 local LoadStart = tick()
 
 local GlobalEnvironment = getgenv()
@@ -1289,7 +1294,7 @@ WaterSettings:AddLabel("Menu key"):AddKeyPicker("MenuKeybind", { Default = "Left
 Library.ToggleKeybind = Options.MenuKeybind
 
 ThemeManager.BuiltInThemes = {
-    ["Deep Ocean"] = { 1, { FontColor = "e8f7ff", MainColor = "102838", AccentColor = "22b8cf", BackgroundColor = "071822", OutlineColor = "275166" } },
+    ["Default"] = { 1, { FontColor = "e8f7ff", MainColor = "102838", AccentColor = "22b8cf", BackgroundColor = "071822", OutlineColor = "275166" } },
     ["Amethyst"] = { 2, { FontColor = "f5ecff", MainColor = "2b203d", AccentColor = "ad7be9", BackgroundColor = "191326", OutlineColor = "4d3b65" } },
     ["Forest"] = { 3, { FontColor = "e9ffef", MainColor = "183526", AccentColor = "58cb8b", BackgroundColor = "0e2017", OutlineColor = "315b40" } },
     ["Rose"] = { 4, { FontColor = "fff0f5", MainColor = "3b202b", AccentColor = "ef7fa6", BackgroundColor = "23131b", OutlineColor = "63364a" } },
@@ -1322,7 +1327,7 @@ Groupboxes.General_Character:AddToggle("FlyToggle", {
 	Text = "Fly", Default = false, Tooltip = "Allows you to freely fly around the map."
 })
 Groupboxes.General_Character:AddToggle("AntiClimb", {
-    Text = "Anti Climb", Default = false, Tooltip = "Applies a downward force while airborne to prevent climbing over obstacles."
+    Text = "Anti Climb", Default = false, Tooltip = "Prevents upward jumps and pushes the character down while airborne."
 })
 local AntiClimbAttachment, AntiClimbForce, AntiClimbRoot
 local function ClearAntiClimb()
@@ -1341,7 +1346,7 @@ local function UpdateAntiClimb()
         ClearAntiClimb()
         return
     end
-    if AntiClimbRoot ~= RootPart then
+    if AntiClimbRoot ~= RootPart or not AntiClimbForce or not AntiClimbForce.Parent or not AntiClimbAttachment or not AntiClimbAttachment.Parent then
         ClearAntiClimb()
         AntiClimbRoot = RootPart
         AntiClimbAttachment = Instance.new("Attachment")
@@ -1354,8 +1359,15 @@ local function UpdateAntiClimb()
         AntiClimbForce.ApplyAtCenterOfMass = true
         AntiClimbForce.Parent = RootPart
     end
+    local Velocity = RootPart.AssemblyLinearVelocity
     local Airborne = Humanoid and Humanoid.FloorMaterial == Enum.Material.Air
-    AntiClimbForce.Force = Airborne and Vector3.new(0, -RootPart.AssemblyMass * Services.Workspace.Gravity * 5, 0) or Vector3.zero
+    local Rising = Velocity.Y > 0.1
+    if Rising then
+        RootPart.AssemblyLinearVelocity = Vector3.new(Velocity.X, 0, Velocity.Z)
+    end
+    AntiClimbForce.Force = (Airborne or Rising)
+        and Vector3.new(0, -RootPart.AssemblyMass * Services.Workspace.Gravity * 12, 0)
+        or Vector3.zero
 end
 Toggles.AntiClimb:OnChanged(UpdateAntiClimb)
 Connections.AntiClimbHandler = Services.RunService.Heartbeat:Connect(UpdateAntiClimb)
@@ -2859,7 +2871,6 @@ Groupboxes.Exploits_Bypass:AddToggle("BypassGiggle",         { Text = "Bypass Gi
 Groupboxes.Exploits_Bypass:AddToggle("BypassDupe",           { Text = "Bypass Dupe",             Default = false, Tooltip = "Prevents you from open 'Dupe' fake doors." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassEyes",           { Text = "Bypass Eyes",             Default = false, Tooltip = "Prevents 'Eyes' from hurting you." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassLookman",        { Text = "Bypass Lookman",          Default = false, Tooltip = "Prevents 'Lookman' from hurting you." })
-Groupboxes.Exploits_Bypass:AddToggle("BypassMonument",       { Text = "Bypass Monument",         Default = false, Tooltip = "Spoofs the camera direction for Monument checks without moving your view." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassGloombatEggs",   { Text = "Bypass Gloombat Eggs",    Default = false, Tooltip = "Prevents taking damage from stepping on 'Gloombat' eggs." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassSeekObstructions", { Text = "Bypass Seek Obstructions", Default = false, Tooltip = "Prevents obstacles in the 'Seek' chase from harming you." })
 Groupboxes.Exploits_Bypass:AddToggle("BypassVacuum",         { Text = "Bypass Vacuum",           Default = false, Tooltip = "Prevents you from falling into 'Vacuum' fake doors." })
@@ -4595,15 +4606,13 @@ Groupboxes.Exploits_BypassRight:AddDivider()
 Groupboxes.Exploits_BypassRight:AddToggle("InfiniteItemsToggle", {
 	Text = "Infinite Items", Default = false,
 	Tooltip = "Allows certain items to be used without draining their uses.",
-	Disabled = not Functions.CheckCompatability({"fireproximityprompt"}),
-	DisabledTooltip = Globals.IncompatibleMessage
+	Disabled = not Functions.CheckCompatability({"fireproximityprompt"}), DisabledTooltip = Globals.IncompatibleMessage
 })
 Groupboxes.Exploits_BypassRight:AddDropdown("InfiniteItemsList", {
 	Text = "Item List",
 	Values = { "Lockpicks", "Skeleton Key", "Shears", "Multitool" },
 	Multi = true, AllowNull = true,
-	Disabled = not Functions.CheckCompatability({"fireproximityprompt"}),
-	DisabledTooltip = Globals.IncompatibleMessage
+	Disabled = not Functions.CheckCompatability({"fireproximityprompt"}), DisabledTooltip = Globals.IncompatibleMessage
 })
 Toggles.InfiniteItemsToggle:OnChanged(function(Value)
 	for FakePrompt, RealPrompt in FakePrompts do
@@ -6346,8 +6355,7 @@ Groupboxes.Floors_Farming:AddButton({
 		loadstring(game:HttpGet("https://raw.githubusercontent.com/bocaj111004/Abysall/refs/heads/main/Scripts/DeathFarm.luau"))()
 	end,
 
-	Disabled = not Functions.CheckCompatability({"fireproximityprompt", "firesignal"}),
-	DisabledTooltip = Globals.ImcompatibleMessage
+	Disabled = not Functions.CheckCompatability({"fireproximityprompt", "firesignal"}), DisabledTooltip = Globals.IncompatibleMessage
 })
 Groupboxes.Floors_Farming:AddButton({
 	Text = "Copy Death Farm Loadstring",
@@ -6360,8 +6368,7 @@ Groupboxes.Floors_Farming:AddButton({
 		Library:Notify("Loadstring has been copied to your clipboard.")
 	end,
 
-	Disabled = not Functions.CheckCompatability({"fireproximityprompt", "firesignal"}),
-	DisabledTooltip = Globals.ImcompatibleMessage
+	Disabled = not Functions.CheckCompatability({"fireproximityprompt", "firesignal"}), DisabledTooltip = Globals.IncompatibleMessage
 })
 
 Toggles.KnobFarm:OnChanged(function(Value)
@@ -6432,30 +6439,6 @@ if Functions.CheckCompatability({"hookmetamethod", "newcclosure", "getnamecallme
     OtherHook = Abysall.Environment.hookmetamethod(game, "__index", Abysall.Environment.newcclosure(function(Self, Property)
         if not InstanceToken.Active then return OtherHook(Self, Property) end
         local Real = OtherHook(Self, Property)
-
-        if Self == Camera and Property == "CFrame" and Toggles.BypassMonument.Value then
-            local CallerAvailable, CallingScript = pcall(function() return getcallingscript and getcallingscript() end)
-            local IsMonumentCheck = CallerAvailable and CallingScript and CallingScript.Name:lower():find("monument")
-            if not IsMonumentCheck then
-                for Level = 2, 5 do
-                    local Success, Source = pcall(debug.info, Level, "s")
-                    if Success and type(Source) == "string" and Source:lower():find("monument") then
-                        IsMonumentCheck = true
-                        break
-                    end
-                end
-            end
-            if IsMonumentCheck then
-                for _, Entity in Objects.Entities do
-                    if Entity.Name == "MonumentEntity" and Entity.Parent then
-                        local Target = Entity:FindFirstChild("Top") or Entity.PrimaryPart
-                        if Target and Target:IsA("BasePart") and (Target.Position - Real.Position).Magnitude > 0.01 then
-                            return CFrame.lookAt(Real.Position, Target.Position)
-                        end
-                    end
-                end
-            end
-        end
 
         if Property == "MoveDirection" and Self == Humanoid and Globals.RoomsAutoWalkActive and Toggles.RoomsAutoWalkSpoofFootsteps.Value and Floor == "Rooms" and not Character:GetAttribute("Hiding") then
             return RootPart.CFrame.LookVector
