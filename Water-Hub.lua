@@ -1,8 +1,3 @@
-
---	Functions.Notify({Title = "Used For Notifications."})
--- 	Disabled = not Functions.CheckCompatability({"require"}), DisabledTooltip = Globals.IncompatibleMessage
--- 	Risky = Floor ~= "Mines" (Means it only works on mines)
-
 local LoadStart = tick()
 
 local GlobalEnvironment = getgenv()
@@ -149,9 +144,9 @@ local Connections = {}
 local Globals = {}
 local CutsceneActive = false
 local DeferredESP = {}
-local CutsceneESPGui
 local Connections = {}
 local ESPConnections = {}
+local ItemInventoryConnections = {}
 local Groupboxes = {}
 local FakePrompts = {}
 local Functions = {}
@@ -333,6 +328,10 @@ local ItemNames = {
     ["Drive"] = "Drive", ["KeyJewelry"] = "Key Jewelry", ["KeyGarage"] = "Garage Key",
     ["CoinRoll"] = "Coin Roll", ["PocketMirror"] = "Pocket Mirror",
     ["PeachCobbler"] = "Peach Cobbler", ["ObjectScanner"] = "Scanner",
+    ["GiantGummyworm"] = "Giant Gummyworm", ["WizardHat"] = "Wizard Hat",
+    ["CandyBaskey"] = "Candy Basket", ["CandyBasket"] = "Candy Basket", ["CandyBucket"] = "Candy Bucket",
+    ["ChocolateCrate"] = "Chocolate Crate", ["Haybale"] = "Haybale",
+    ["LargeCandyBag"] = "Large Candy Bag", ["BrokenHeadstone"] = "Broken Headstone",
 	["AbrahamHat"]        = "Hat",
 	["LargeScrew"]        = "Screw",
 	["DinkyLamp"]         = "Lamp",
@@ -661,68 +660,15 @@ Globals.DoorsNotify = function(NotifyOptions)
 	end)
 end
 
-Globals.STX = loadstring(game:HttpGet("https://raw.githubusercontent.com/bocaj111004/Abysall/refs/heads/main/Components/STX.luau"))()
 Functions.Notify = function(Settings)
-	local HiddenContainer = GetHiddenContainer()
-
-	if not Settings.Body then
-		Settings.Body = "..."
-	end
-
-	if not Options.NotifyStyle or Options.NotifyStyle.Value == "Abysall" then
-		local Sound = Instance.new("Sound", HiddenContainer)
-		Sound.SoundId = "rbxassetid://8784885431"
-		Sound.Volume = (Toggles.NotifyPlaySound and Toggles.NotifyPlaySound.Value and Options.NotifySoundVolume.Value) or (Toggles.NotifyPlaySound and 0 or 3)
-		Sound.PlayOnRemove = true
-		Sound:Destroy()
-		NotificationLibrary:Notify(Settings.Title, Settings.Body, Settings.Time or 5)
-	elseif Options.NotifyStyle.Value == "Doors" then
-		local IsEntity = false
-		local EntityName = ""
-		for Index, Object in pairs(Entities) do
-			if Object.NotifyMessage.Title == Settings.Title or Object.NotifyMessage.Body == Settings.Body then
-				IsEntity = true
-				EntityName = Index
-			end
-		end
-		Globals.DoorsNotify({
-			Title = "Water Hub",
-			Description = Settings.Title,
-			Reason = Settings.Body,
-			Style = IsEntity and "WARNING" or "NOTIFICATION",
-			Color = IsEntity and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(255, 222, 189),
-			Image = Settings.Image,
-			Time = Settings.Time
-		})
-	elseif Options.NotifyStyle.Value == "STX" then
-		local Sound = Instance.new("Sound", HiddenContainer)
-		Sound.SoundId = "rbxassetid://4590657391"
-		Sound.Volume = (Toggles.NotifyPlaySound and Toggles.NotifyPlaySound.Value and Options.NotifySoundVolume.Value) or (Toggles.NotifyPlaySound and 0 or 3)
-		Sound.PlayOnRemove = true
-		Sound:Destroy()
-
-		if Settings.Image then
-			Globals.STX:Notify(
-				{Title = "Water Hub", Description = Settings.Title .. "\n" .. Settings.Body},
-				{OutlineColor = Library.Scheme.AccentColor,Time = Settings.Time or 5, Type = "image"},
-				{Image = Settings.Image, ImageColor = Color3.fromRGB(255, 255, 255)}
-			)
-		else
-			Globals.STX:Notify(
-				{Title = "Water Hub", Description = Settings.Title .. "\n" .. Settings.Body},
-				{OutlineColor = Library.Scheme.AccentColor,Time = Settings.Time or 5, Type = "default"}
-			)
-		end
-	else
-		local Sound = Instance.new("Sound", HiddenContainer)
-		Sound.SoundId = "rbxassetid://4590662766"
-		Sound.Volume = (Toggles.NotifyPlaySound and Toggles.NotifyPlaySound.Value and Options.NotifySoundVolume.Value) or (Toggles.NotifyPlaySound and 0 or 3)
-		Sound.PlayOnRemove = true
-		Sound:Destroy()
-		Library:OldNotify({ Title = Settings.Title, Description = Settings.Body, Time = Settings.Time })
-	end
+    local HiddenContainer = GetHiddenContainer()
+    local Sound = Instance.new("Sound", HiddenContainer)
+    Sound.SoundId = "rbxassetid://8784885431"
+    Sound.Volume = 3
+    Sound.PlayOnRemove = true
+    Sound:Destroy()
+    NotificationLibrary:Notify(Settings.Title, Settings.Body or "...", Settings.Time or 5)
 end
-
 Functions.Caption = function(Text, PlaySound)
 	if typeof(PlaySound) ~= "boolean" then
 		PlaySound = true
@@ -1121,8 +1067,42 @@ Globals.PromptContainer.Parent = GetHiddenContainer()
 
 local ESPBlacklist = {}
 
+local function IsItemInPlayerInventory(Object)
+    for _, Player in Services.Players:GetPlayers() do
+        local PlayerCharacter = Player.Character
+        local Backpack = Player:FindFirstChildOfClass("Backpack")
+        if (PlayerCharacter and Object:IsDescendantOf(PlayerCharacter)) or (Backpack and Object:IsDescendantOf(Backpack)) then
+            return true
+        end
+    end
+    return false
+end
 Functions.AddESP = function(ESPOptions, RoomBased)
 	local Object = ESPOptions.Object
+    if ItemNames[Object.Name] then
+        if not Object:IsA("Model") then return end
+        if not ItemInventoryConnections[Object] then
+            local InventoryConnection = Object.AncestryChanged:Connect(function()
+                if IsItemInPlayerInventory(Object) then
+                    Functions.RemoveESP(Object)
+                elseif Object:IsDescendantOf(Services.Workspace) and Toggles.ItemESPToggle and Toggles.ItemESPToggle.Value then
+                    Functions.AddESP(ESPOptions, RoomBased)
+                end
+            end)
+            ItemInventoryConnections[Object] = InventoryConnection
+            table.insert(Connections, InventoryConnection)
+            Object.Destroying:Once(function()
+                InventoryConnection:Disconnect()
+                ItemInventoryConnections[Object] = nil
+                local Index = table.find(Connections, InventoryConnection)
+                if Index then table.remove(Connections, Index) end
+            end)
+        end
+        if IsItemInPlayerInventory(Object) then
+            Functions.RemoveESP(Object)
+            return
+        end
+    end
 	if CutsceneActive then
 		DeferredESP[Object] = { Options = ESPOptions, RoomBased = RoomBased }
 		return
@@ -1285,19 +1265,18 @@ local Tabs = {
 	Exploits = Window:AddTab("Exploits", "shield"),
 	Visuals = Window:AddTab("Visuals", "eye"),
 	Floors = Window:AddTab("Floors", "earth"),
-	Archives = Window:AddTab("New - Archives", "rbxassetid://104508835882225"),
-	Stairwell = Window:AddTab("New - Stairwell", "rbxassetid://80017304328364"),
+	Archives = Window:AddTab("Archives", "rbxassetid://104508835882225"),
+	Stairwell = Window:AddTab("Stairwell", "rbxassetid://80017304328364"),
 	Settings = Window:AddTab("Settings", "settings"),
 }
 
 
 local InfoUser = Tabs.Info:AddLeftGroupbox("User Info")
+local PlayerAvatar = "rbxthumb://type=AvatarHeadShot&id=" .. Services.Players.LocalPlayer.UserId .. "&w=420&h=420"
+pcall(function() PlayerAvatar = Services.Players:GetUserThumbnailAsync(Services.Players.LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420) end)
+InfoUser:AddImage("PlayerAvatar", { Image = PlayerAvatar, Height = 120 })
 InfoUser:AddLabel("Player: " .. Services.Players.LocalPlayer.Name)
 InfoUser:AddLabel("Executions: " .. tostring(Abysall.TotalExecutions or 1))
-local InfoAbout = Tabs.Info:AddRightGroupbox("About")
-InfoAbout:AddLabel("Water Hub for DOORS")
-InfoAbout:AddLabel("Based on Abysall Hub Continued by TheRealCookieMonsterOf1966")
-InfoAbout:AddLabel("Visual controls, camera options and game tools")
 local InfoUpdates = Tabs.Info:AddRightGroupbox("Updates")
 InfoUpdates:AddLabel("MODIFIED ABYSSAL HUB")
 
@@ -1309,12 +1288,24 @@ end })
 WaterSettings:AddLabel("Menu key"):AddKeyPicker("MenuKeybind", { Default = "LeftAlt", NoUI = true, Text = "Menu keybind" })
 Library.ToggleKeybind = Options.MenuKeybind
 
+ThemeManager.BuiltInThemes = {
+    ["Deep Ocean"] = { 1, { FontColor = "e8f7ff", MainColor = "102838", AccentColor = "22b8cf", BackgroundColor = "071822", OutlineColor = "275166" } },
+    ["Amethyst"] = { 2, { FontColor = "f5ecff", MainColor = "2b203d", AccentColor = "ad7be9", BackgroundColor = "191326", OutlineColor = "4d3b65" } },
+    ["Forest"] = { 3, { FontColor = "e9ffef", MainColor = "183526", AccentColor = "58cb8b", BackgroundColor = "0e2017", OutlineColor = "315b40" } },
+    ["Rose"] = { 4, { FontColor = "fff0f5", MainColor = "3b202b", AccentColor = "ef7fa6", BackgroundColor = "23131b", OutlineColor = "63364a" } },
+    ["Slate"] = { 5, { FontColor = "edf1f5", MainColor = "29313a", AccentColor = "8eb2d2", BackgroundColor = "171e25", OutlineColor = "465462" } },
+    ["Solar"] = { 6, { FontColor = "fff7e6", MainColor = "3b3020", AccentColor = "f5bf59", BackgroundColor = "241d12", OutlineColor = "675239" } },
+    ["Crimson"] = { 7, { FontColor = "fff1f1", MainColor = "382022", AccentColor = "e3656a", BackgroundColor = "211416", OutlineColor = "60383c" } },
+    ["Frost"] = { 8, { FontColor = "eafcff", MainColor = "24343e", AccentColor = "8bdde9", BackgroundColor = "14232b", OutlineColor = "3d5c69" } },
+    ["Lavender"] = { 9, { FontColor = "f6f2ff", MainColor = "302c42", AccentColor = "b9a2f4", BackgroundColor = "1c1a2b", OutlineColor = "554d70" } },
+    ["Graphite"] = { 10, { FontColor = "f5f5f5", MainColor = "252525", AccentColor = "86a9ff", BackgroundColor = "141414", OutlineColor = "444444" } },
+}
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
 ThemeManager:SetDefaultTheme({ AccentColor = Color3.fromRGB(55, 155, 225) })
-ThemeManager:SetFolder("Abysall")
+ThemeManager:SetFolder("Water Hub")
 SaveManager:SetFolder("Abysall")
 SaveManager:SetSubFolder(Abysall.SavePath)
 ThemeManager:ApplyToTab(Tabs.Settings)
@@ -1330,6 +1321,44 @@ Groupboxes.General_Character:AddToggle("SpeedBoostToggle", {
 Groupboxes.General_Character:AddToggle("FlyToggle", {
 	Text = "Fly", Default = false, Tooltip = "Allows you to freely fly around the map."
 })
+Groupboxes.General_Character:AddToggle("AntiClimb", {
+    Text = "Anti Climb", Default = false, Tooltip = "Applies a downward force while airborne to prevent climbing over obstacles."
+})
+local AntiClimbAttachment, AntiClimbForce, AntiClimbRoot
+local function ClearAntiClimb()
+    if AntiClimbForce then
+        AntiClimbForce:Destroy()
+        AntiClimbForce = nil
+    end
+    if AntiClimbAttachment then
+        AntiClimbAttachment:Destroy()
+        AntiClimbAttachment = nil
+    end
+    AntiClimbRoot = nil
+end
+local function UpdateAntiClimb()
+    if not Toggles.AntiClimb.Value or LocalPlayer:GetAttribute("Alive") == false or not RootPart or not RootPart.Parent then
+        ClearAntiClimb()
+        return
+    end
+    if AntiClimbRoot ~= RootPart then
+        ClearAntiClimb()
+        AntiClimbRoot = RootPart
+        AntiClimbAttachment = Instance.new("Attachment")
+        AntiClimbAttachment.Name = "WaterHubAntiClimbAttachment"
+        AntiClimbAttachment.Parent = RootPart
+        AntiClimbForce = Instance.new("VectorForce")
+        AntiClimbForce.Name = "WaterHubAntiClimbForce"
+        AntiClimbForce.Attachment0 = AntiClimbAttachment
+        AntiClimbForce.RelativeTo = Enum.ActuatorRelativeTo.World
+        AntiClimbForce.ApplyAtCenterOfMass = true
+        AntiClimbForce.Parent = RootPart
+    end
+    local Airborne = Humanoid and Humanoid.FloorMaterial == Enum.Material.Air
+    AntiClimbForce.Force = Airborne and Vector3.new(0, -RootPart.AssemblyMass * Services.Workspace.Gravity * 5, 0) or Vector3.zero
+end
+Toggles.AntiClimb:OnChanged(UpdateAntiClimb)
+Connections.AntiClimbHandler = Services.RunService.Heartbeat:Connect(UpdateAntiClimb)
 Toggles.FlyToggle:AddKeyPicker("FlyKeybind", {
 	Text = "Fly", Default = "G", Mode = "Toggle", SyncToggleState = true
 })
@@ -3238,7 +3267,6 @@ Groupboxes.Archives_Bypasses:AddToggle("BypassAlma", { Text = "Bypass Alma", Def
 Groupboxes.Archives_Bypasses:AddToggle("BypassDrones", { Text = "Bypass Drones", Default = false, Tooltip = "Prevents 'Drones' from attacking you." })
 Groupboxes.Archives_Bypasses:AddToggle("AntiScribbles", { Text = "Bypass Scribbles", Default = false, Tooltip = "Prevents 'Scribbles' from attacking you." })
 
-Groupboxes.Archives_Experimental = Tabs.Archives:AddLeftGroupbox("Experimental")
 
 Toggles.AntiClosetTrash:OnChanged(function(Value)
 	if AntiClosetTrash_Connection then
@@ -4881,7 +4909,7 @@ end)
 
 local Main_Game
 local function CanApplyCustomFOV()
-    if CutsceneActive or not Toggles.FOVToggle.Value or not Character then return false end
+    if CutsceneActive or LocalPlayer:GetAttribute("Alive") == false or not Toggles.FOVToggle.Value or not Character then return false end
     if Character:GetAttribute("Stunned") or LocalPlayer:GetAttribute("Stunned") then return false end
     local InMinigame = Character:GetAttribute("InMinigame") or LocalPlayer:GetAttribute("InMinigame")
     if InMinigame ~= nil and InMinigame ~= false and InMinigame ~= "" and InMinigame ~= " " then return false end
@@ -4926,11 +4954,47 @@ task.spawn(function()
     end
 end)
 local function FindESPGui()
-	for _, Frame in Abysall.ESPLibrary.Frames do
-		local Gui = Frame.Parent and Frame.Parent.Parent
-		if Gui and Gui:IsA("ScreenGui") then return Gui end
-	end
-	return nil
+    for _, Frame in Abysall.ESPLibrary.Frames do
+        local Gui = Frame.Parent and Frame.Parent.Parent
+        if Gui and Gui:IsA("ScreenGui") then return Gui end
+    end
+    for _, Highlight in Abysall.ESPLibrary.Highlights do
+        local Gui = Highlight.Parent and Highlight.Parent.Parent
+        if Gui and Gui:IsA("ScreenGui") then return Gui end
+    end
+    return nil
+end
+local function UpdateESPVisibility()
+    local Visible = not CutsceneActive and (not Toggles.EnableESP or Toggles.EnableESP.Value)
+    local Gui = FindESPGui()
+    if Gui then Gui.Enabled = Visible end
+    if Visible then
+        if Connections.ESPHighlightHider then
+            Connections.ESPHighlightHider:Disconnect()
+            Connections.ESPHighlightHider = nil
+        end
+        for Object, Highlight in Abysall.ESPLibrary.Highlights do
+            if Highlight.Parent and Abysall.ESPLibrary.ElementsEnabled[Object] then
+                Highlight.Adornee = Object
+                Highlight.Enabled = true
+            end
+        end
+    else
+        local function HideESP()
+            local CurrentGui = FindESPGui()
+            if CurrentGui then CurrentGui.Enabled = false end
+            for _, Highlight in Abysall.ESPLibrary.Highlights do
+                if Highlight.Parent then
+                    Highlight.Adornee = nil
+                    Highlight.Enabled = false
+                end
+            end
+        end
+        HideESP()
+        if not Connections.ESPHighlightHider then
+            Connections.ESPHighlightHider = Services.RunService.Heartbeat:Connect(HideESP)
+        end
+    end
 end
 local function HandleCutsceneState(Value)
 	if CutsceneActive == Value then return end
@@ -4944,22 +5008,9 @@ local function HandleCutsceneState(Value)
 		local RoomAmbient = Room and Room:GetAttribute("Ambient")
 		if RoomAmbient then Services.Lighting.Ambient = RoomAmbient end
 		ApplyFogState()
-		CutsceneESPGui = FindESPGui()
-		if CutsceneESPGui then CutsceneESPGui.Enabled = false end
-		local function HideHighlights()
-			for _, Highlight in Abysall.ESPLibrary.Highlights do
-				if Highlight.Parent then Highlight.Adornee = nil Highlight.Enabled = false end
-			end
-		end
-		HideHighlights()
-		Connections.CutsceneESPHighlightHider = Services.RunService.Heartbeat:Connect(HideHighlights)
+		UpdateESPVisibility()
 	else
-		if Connections.CutsceneESPHighlightHider then Connections.CutsceneESPHighlightHider:Disconnect() Connections.CutsceneESPHighlightHider = nil end
-		for Object, Highlight in Abysall.ESPLibrary.Highlights do
-			if Highlight.Parent and Abysall.ESPLibrary.ElementsEnabled[Object] then Highlight.Adornee = Object Highlight.Enabled = true end
-		end
-		if CutsceneESPGui and CutsceneESPGui.Parent then CutsceneESPGui.Enabled = true end
-		CutsceneESPGui = nil
+		UpdateESPVisibility()
 		if Toggles.AmbientToggle.Value then Services.Lighting.Ambient = Options.AmbientColor.Value end
 		ApplyFogState()
 		ApplyLoopRemoveFog()
@@ -5077,15 +5128,18 @@ Toggles.DisableEntityJumpscares:OnChanged(function(Value)
 	end
 end)
 
-Groupboxes.Visuals_RightTab     = Tabs.Visuals:AddRightTabbox("Entities / Settings / Entity Nodes")
+Groupboxes.Visuals_RightTab     = Tabs.Visuals:AddRightTabbox("Entities / Entity Nodes")
 Groupboxes.Visuals_Entities     = Groupboxes.Visuals_RightTab:AddTab("Entities")
-Groupboxes.Visuals_EntitySettings = Groupboxes.Visuals_RightTab:AddTab("Settings")
 
+local NotifyEntityNames = { "Weaveling","Stems","Rush","Bash","Scribbles","Teller","DronesStampede","Creak","Noise","Noise_TV","Portrait","Ambush","Eyes","Halt","Blitz","Lookman","Gloombat Swarm","A-60","A-120","Sally","Jeff the Killer","Groundskeeper","Monument","AR0xMBUSH","RNIUSHCG==" }
 Groupboxes.Visuals_Entities:AddDropdown("EntityList", {
 	Text = "Entity List",
-	Values = { "Weaveling","Stems","Rush","Bash","Scribbles","Teller","DronesStampede","Creak","Noise","Noise_TV","Portrait","Ambush","Eyes","Halt","Blitz","Lookman","Gloombat Swarm","A-60","A-120","Sally","Jeff the Killer","Groundskeeper","Monument","AR0xMBUSH","RNIUSHCG==" },
+	Values = NotifyEntityNames,
 	Multi = true, AllowNull = true
 })
+local DefaultNotifyEntities = {}
+for _, Name in NotifyEntityNames do DefaultNotifyEntities[Name] = true end
+Options.EntityList:SetValue(DefaultNotifyEntities)
 Groupboxes.Visuals_Entities:AddToggle("NotifyEntities",    { Text = "Notify Entities",    Default = false, Tooltip = "Sends a notification when an entity spawns." })
 Groupboxes.Visuals_Entities:AddDivider()
 Groupboxes.Visuals_Entities:AddToggle("ShowEntityPath", {
@@ -5332,26 +5386,18 @@ Toggles.NotifyLibraryCode:OnChanged(function(Value)
 		local Code = Functions.GetLibraryCode()
 		if Code and not Code:find("_") and not Globals.LibraryCodeFound and CurrentRooms:FindFirstChild("50") then
 			local Lock = Services.Workspace:FindFirstChild("Padlock", true)
-			Functions.Notify({ Title = "Padlock code found!", Body = "The code is: '" .. Code .. "'", Time = Toggles.NotifyKeepNotifications.Value and Lock or 15 })
+			Functions.Notify({ Title = "Padlock code found!", Body = "The code is: '" .. Code .. "'", Time = 15 })
 			Globals.LibraryCodeFound = true
 		end
 	end
 end)
 
-Groupboxes.Visuals_EntitySettings:AddToggle("EntityChatToggle", { Text = "Notify Chat", Default = false, Tooltip = "Sends a message in the chat when an entity spawns." })
-Groupboxes.Visuals_EntitySettings:AddInput("EntityChatMessage", { Text = "Message", Default = "spawned!", Numeric = false, Placeholder = "Message" })
-Groupboxes.Visuals_EntitySettings:AddDivider()
-Groupboxes.Visuals_EntitySettings:AddDropdown("NotifyStyle", { Text = "Notify Style", Values = { "Abysall", "Doors", "STX", "Library" }, Default = 1 })
-Groupboxes.Visuals_EntitySettings:AddSlider("NotifySoundVolume", { Text = "Sound Volume", Min = 0, Max = 10, Default = 3, Rounding = 1 })
-Groupboxes.Visuals_EntitySettings:AddToggle("NotifyPlaySound", { Text = "Play Sound", Default = true, Tooltip = "Makes notifications play an alert sound." })
-Groupboxes.Visuals_EntitySettings:AddToggle("NotifyKeepNotifications", { Text = "Keep Notifications", Default = false, Tooltip = "Certain notifications will stay on screen until they are no longer needed." })
-Groupboxes.Visuals_EntitySettings:AddButton({ Text = "Test Notification", DoubleClick = false, Tooltip = "Sends a test notifcation, so you can see how your settings look.", Func = function()
-	Functions.Notify({Title = "This is a test."})
-end})
-
 Groupboxes.Visuals_ESP          = Tabs.Visuals:AddRightTabbox("ESP/Settings")
 Groupboxes.Visuals_ESP_Toggles  = Groupboxes.Visuals_ESP:AddTab("ESP")
 Groupboxes.Visuals_ESP_Settings = Groupboxes.Visuals_ESP:AddTab("Settings")
+Groupboxes.Visuals_ESP_Toggles:AddToggle("EnableESP", { Text = "Enable Esp", Default = true, Tooltip = "Turns all ESP on or off." })
+Toggles.EnableESP:OnChanged(UpdateESPVisibility)
+UpdateESPVisibility()
 
 local function MakeESPToggle(ToggleKey, ColorKey, Text, Tooltip, ObjectsTable, LabelFunc, RoomBased)
 	Groupboxes.Visuals_ESP_Toggles:AddToggle(ToggleKey, { Text = Text, Default = false, Tooltip = Tooltip })
@@ -5437,12 +5483,15 @@ Groupboxes.Visuals_ESP_Toggles:AddToggle("CurrencyESPToggle",   { Text = "Curren
 Groupboxes.Visuals_ESP_Toggles:AddToggle("LadderESPToggle",     { Text = "Ladders",      Default = false, Tooltip = "Highlights ladders that can be used to disable the anticheat." })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("MiscESPToggle",       { Text = "Misc",         Default = false, Tooltip = "Highlights miscellaneous objects that can be used to disable the anticheat." })
 Groupboxes.Visuals_ESP_Toggles:AddDivider()
-Groupboxes.Visuals_ESP_Toggles:AddDropdown("EntityESPOptions",     { 
+local ESPEntityNames = { "Weaveling","Stems","Rush","Bash","Scribbles","Teller","DronesStampede","Creak","Noise","Noise_TV","Portrait","Ambush","Eyes","Dupe","Figure","Blitz","Lookman","Snare","Giggle","Gloombat Eggs","Grumble","A-60","A-120","Sally","Jeff the Killer","Groundskeeper","Mandrake Hole","Monument","Bramble","AR0xMBUSH","RNIUSHCG==" }
+Groupboxes.Visuals_ESP_Toggles:AddDropdown("EntityESPOptions", {
 	Text = "Entity List",
-	Values = { "Weaveling","Stems","Rush","Bash","Scribbles","Teller","DronesStampede","Creak","Noise","Noise_TV","Portrait","Ambush","Eyes","Dupe","Figure","Blitz","Lookman","Snare","Giggle","Gloombat Eggs","Grumble","A-60","A-120","Sally","Jeff the Killer","Groundskeeper","Mandrake Hole","Monument","Bramble","AR0xMBUSH","RNIUSHCG==" },
-	Multi = true,
-	AllowNull = true
+	Values = ESPEntityNames,
+	Multi = true, AllowNull = true
 })
+local DefaultESPEntities = {}
+for _, Name in ESPEntityNames do DefaultESPEntities[Name] = true end
+Options.EntityESPOptions:SetValue(DefaultESPEntities)
 Groupboxes.Visuals_ESP_Toggles:AddToggle("EntityESPToggle",     { Text = "Entities",      Default = false, Tooltip = "Highlights all entities that spawn." })
 
 Toggles.DoorESPToggle:AddColorPicker("DoorESPColor",           { Text = "Doors",        Default = Color3.fromRGB(0, 200, 255),  Transparency = 0 })
@@ -6465,12 +6514,7 @@ Functions.HandleCharacter = function(NewCharacter)
 	Humanoid = NewCharacter:WaitForChild("Humanoid", 9e9)
 	RootPart = NewCharacter:FindFirstChild("HumanoidRootPart")
 	Camera   = Services.Workspace.CurrentCamera
-    local function RefreshCutscene()
-        HandleCutsceneState(Character:GetAttribute("InCutscene") == true or LocalPlayer:GetAttribute("InCutscene") == true or Character:GetAttribute("Cutscene") == true or LocalPlayer:GetAttribute("Cutscene") == true)
-    end
-    Connections.CutsceneCharacterWatcher = Character.AttributeChanged:Connect(RefreshCutscene)
-    Connections.CutscenePlayerWatcher = LocalPlayer.AttributeChanged:Connect(RefreshCutscene)
-    RefreshCutscene()
+
 
 	Globals.OldCamera = Camera
 	Globals.MainUI = LocalPlayer.PlayerGui.MainUI
@@ -6479,6 +6523,12 @@ Functions.HandleCharacter = function(NewCharacter)
 	Globals.PositionSpoofApplied = false
 	Collision = NewCharacter:WaitForChild("Collision")
 	CollisionPart  = NewCharacter:FindFirstChild("CollisionPart") or NewCharacter:FindFirstChild("Collision")
+    local function RefreshCutscene()
+        HandleCutsceneState(Character:GetAttribute("InCutscene") == true or LocalPlayer:GetAttribute("InCutscene") == true or Character:GetAttribute("Cutscene") == true or LocalPlayer:GetAttribute("Cutscene") == true or LocalPlayer:GetAttribute("Alive") == false)
+    end
+    Connections.CutsceneCharacterWatcher = Character.AttributeChanged:Connect(RefreshCutscene)
+    Connections.CutscenePlayerWatcher = LocalPlayer.AttributeChanged:Connect(RefreshCutscene)
+    RefreshCutscene()
 	Globals.OriginalCollisionOffset = RootPart.CFrame:ToObjectSpace(Collision.CFrame)
 	Globals.OriginalCollisionPartOffset = RootPart.CFrame:ToObjectSpace(CollisionPart.CFrame)
 	Globals.OriginalCollisionCrouchOffset = Collision:FindFirstChild("CollisionCrouch") and RootPart.CFrame:ToObjectSpace(Collision.CollisionCrouch.CFrame)
@@ -6616,7 +6666,7 @@ Functions.HandleCharacter = function(NewCharacter)
 			local Code = Functions.GetLibraryCode()
 			if Code and not Code:find("_") and not Globals.LibraryCodeFound then
 				local Lock = Services.Workspace:FindFirstChild("Padlock", true)
-				Functions.Notify({ Title = "Padlock code found!", Body = "The code is: '" .. Code .. "'", Time = Toggles.NotifyKeepNotifications.Value and Lock or 15 })
+				Functions.Notify({ Title = "Padlock code found!", Body = "The code is: '" .. Code .. "'", Time = 15 })
 				Globals.LibraryCodeFound = true
 			end
 		end
@@ -6627,7 +6677,7 @@ Functions.HandleCharacter = function(NewCharacter)
 			local Code = Functions.GetLibraryCode()
 			if Code and not Code:find("_") and not Globals.LibraryCodeFound then
 				local Lock = Services.Workspace:FindFirstChild("Padlock", true)
-				Functions.Notify({ Title = "Padlock code found!", Body = "The code is: '" .. Code .. "'", Time = Toggles.NotifyKeepNotifications.Value and Lock or 15 })
+				Functions.Notify({ Title = "Padlock code found!", Body = "The code is: '" .. Code .. "'", Time = 15 })
 				Globals.LibraryCodeFound = true
 			end
 		end
@@ -7509,7 +7559,7 @@ Functions.HandleObject = function(Object)
 	elseif Name == "MouseHole" then
 		if Toggles.ChestESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Mouse", Color = Options.ChestESPColor.Value }, true) end
 		table.insert(Objects.Chests, Object)
-	elseif Object:IsA("Model") and ItemNames[Name] and (Object:FindFirstChild("ModulePrompt") or table.find({ "Drive", "KeyJewelry", "KeyGarage", "CoinRoll", "PocketMirror", "PeachCobbler", "ObjectScanner" }, Name)) then
+	elseif Object:IsA("Model") and ItemNames[Name] and (Object:FindFirstChild("ModulePrompt") or table.find({ "Drive", "KeyJewelry", "KeyGarage", "CoinRoll", "PocketMirror", "PeachCobbler", "ObjectScanner", "GiantGummyworm", "WizardHat", "CandyBaskey", "CandyBasket", "CandyBucket", "ChocolateCrate", "Haybale", "LargeCandyBag", "BrokenHeadstone" }, Name)) then
 		if Toggles.ItemESPToggle.Value then Functions.AddESP({ Object = Object, Text = (Name == "Drive" and Object:GetAttribute("Tool_ScannerMode")) or ItemNames[Name], Color = Options.ItemESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil) end
 		if Name == "LotusHolder" or Name == "LotusPetalPickup" then
 			Object.Handle:GetPropertyChangedSignal("LocalTransparencyModifier"):Connect(function()
@@ -7629,7 +7679,7 @@ Functions.HandleObject = function(Object)
 	elseif Object:GetAttribute("RawName") and Object:GetAttribute("RawName"):find("Halt") or Object:GetAttribute("Shade") == true then
 		if Toggles.NotifyEntities.Value and Options.EntityList.Value["Halt"] then
 			Functions.Notify({ Title = "Entity 'Halt' will spawn in the next room.", Image = EntityIcons["Halt"] })
-			if Toggles.EntityChatToggle.Value then Functions.SendChat("Halt next room!") end
+			if false then Functions.SendChat("Halt next room!") end
 		end
 		local HaltLogConn
 		HaltLogConn = Services.LogService.MessageOut:Connect(function(Message)
@@ -8340,10 +8390,10 @@ local function HandleEntitySpawn(Entity)
 			Alias = Model.PrimaryPart.Name
 		end
 
-		Functions.Notify({ Title = NotifyTitle, Body = NotifyBody, Image = NotifyImage, Time = Toggles.NotifyKeepNotifications.Value and Model or nil })
+		Functions.Notify({ Title = NotifyTitle, Body = NotifyBody, Image = NotifyImage, Time = nil })
 
-		if Toggles.EntityChatToggle.Value then
-			Functions.SendChat(Alias .. " " .. Options.EntityChatMessage.Value)
+		if false then
+			Functions.SendChat(Alias .. " " .. "spawned!")
 		end
 	end
 
@@ -8430,6 +8480,7 @@ LocalPlayer.CharacterAdded:Connect(function(NewCharacter)
 end)
 
 Library:OnUnload(function()
+	ClearAntiClimb()
 	InstanceToken.Active = false
 	LoopFogRunning = false
 	if LastStemUnequippedConnection then LastStemUnequippedConnection:Disconnect() end
