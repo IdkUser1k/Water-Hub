@@ -1274,7 +1274,7 @@ local Tabs = {
 local InfoUser = Tabs.Info:AddLeftGroupbox("User Info")
 local PlayerAvatar = "rbxthumb://type=AvatarHeadShot&id=" .. Services.Players.LocalPlayer.UserId .. "&w=420&h=420"
 pcall(function() PlayerAvatar = Services.Players:GetUserThumbnailAsync(Services.Players.LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420) end)
-InfoUser:AddImage("PlayerAvatar", { Image = PlayerAvatar, Height = 120 })
+pcall(function() InfoUser:AddImage("PlayerAvatar", { Image = PlayerAvatar, Height = 120 }) end)
 InfoUser:AddLabel("Player: " .. Services.Players.LocalPlayer.Name)
 InfoUser:AddLabel("Executions: " .. tostring(Abysall.TotalExecutions or 1))
 local InfoUpdates = Tabs.Info:AddRightGroupbox("Updates")
@@ -1282,7 +1282,7 @@ InfoUpdates:AddLabel("MODIFIED ABYSSAL HUB")
 
 local WaterSettings = Tabs.Settings:AddLeftGroupbox("Menu")
 WaterSettings:AddButton({ Text = "Unload Water Hub", Func = function() Library:Unload() end })
-WaterSettings:AddToggle("ShowKeybinds", { Text = "Show keybind list", Default = true, Callback = function(Value)
+WaterSettings:AddToggle("ShowKeybinds", { Text = "Show keybind list", Default = false, Callback = function(Value)
     if Library.KeybindFrame then Library.KeybindFrame.Visible = Value end
 end })
 WaterSettings:AddLabel("Menu key"):AddKeyPicker("MenuKeybind", { Default = "LeftAlt", NoUI = true, Text = "Menu keybind" })
@@ -1308,7 +1308,7 @@ ThemeManager:SetDefaultTheme({ AccentColor = Color3.fromRGB(55, 155, 225) })
 ThemeManager:SetFolder("Water Hub")
 SaveManager:SetFolder("Abysall")
 SaveManager:SetSubFolder(Abysall.SavePath)
-ThemeManager:ApplyToTab(Tabs.Settings)
+pcall(function() ThemeManager:ApplyToTab(Tabs.Settings) end)
 SaveManager:BuildConfigSection(Tabs.Settings)
 
 Groupboxes.General_Character = Tabs.General:AddLeftGroupbox("Character")
@@ -5139,7 +5139,7 @@ Groupboxes.Visuals_Entities:AddDropdown("EntityList", {
 })
 local DefaultNotifyEntities = {}
 for _, Name in NotifyEntityNames do DefaultNotifyEntities[Name] = true end
-Options.EntityList:SetValue(DefaultNotifyEntities)
+pcall(function() Options.EntityList:SetValue(DefaultNotifyEntities) end)
 Groupboxes.Visuals_Entities:AddToggle("NotifyEntities",    { Text = "Notify Entities",    Default = false, Tooltip = "Sends a notification when an entity spawns." })
 Groupboxes.Visuals_Entities:AddDivider()
 Groupboxes.Visuals_Entities:AddToggle("ShowEntityPath", {
@@ -5397,7 +5397,7 @@ Groupboxes.Visuals_ESP_Toggles  = Groupboxes.Visuals_ESP:AddTab("ESP")
 Groupboxes.Visuals_ESP_Settings = Groupboxes.Visuals_ESP:AddTab("Settings")
 Groupboxes.Visuals_ESP_Toggles:AddToggle("EnableESP", { Text = "Enable Esp", Default = true, Tooltip = "Turns all ESP on or off." })
 Toggles.EnableESP:OnChanged(UpdateESPVisibility)
-UpdateESPVisibility()
+pcall(UpdateESPVisibility)
 
 local function MakeESPToggle(ToggleKey, ColorKey, Text, Tooltip, ObjectsTable, LabelFunc, RoomBased)
 	Groupboxes.Visuals_ESP_Toggles:AddToggle(ToggleKey, { Text = Text, Default = false, Tooltip = Tooltip })
@@ -5491,7 +5491,7 @@ Groupboxes.Visuals_ESP_Toggles:AddDropdown("EntityESPOptions", {
 })
 local DefaultESPEntities = {}
 for _, Name in ESPEntityNames do DefaultESPEntities[Name] = true end
-Options.EntityESPOptions:SetValue(DefaultESPEntities)
+pcall(function() Options.EntityESPOptions:SetValue(DefaultESPEntities) end)
 Groupboxes.Visuals_ESP_Toggles:AddToggle("EntityESPToggle",     { Text = "Entities",      Default = false, Tooltip = "Highlights all entities that spawn." })
 
 Toggles.DoorESPToggle:AddColorPicker("DoorESPColor",           { Text = "Doors",        Default = Color3.fromRGB(0, 200, 255),  Transparency = 0 })
