@@ -6507,7 +6507,8 @@ Functions.HandleCharacter = function(NewCharacter)
 	Collision = NewCharacter:WaitForChild("Collision")
 	CollisionPart  = NewCharacter:FindFirstChild("CollisionPart") or NewCharacter:FindFirstChild("Collision")
     local function RefreshCutscene()
-        HandleCutsceneState(Character:GetAttribute("InCutscene") == true or LocalPlayer:GetAttribute("InCutscene") == true or Character:GetAttribute("Cutscene") == true or LocalPlayer:GetAttribute("Cutscene") == true or LocalPlayer:GetAttribute("Alive") == false)
+        local InCutscene = Character:GetAttribute("InCutscene") == true or LocalPlayer:GetAttribute("InCutscene") == true
+        HandleCutsceneState(InCutscene or LocalPlayer:GetAttribute("Alive") == false)
     end
     Connections.CutsceneCharacterWatcher = Character.AttributeChanged:Connect(RefreshCutscene)
     Connections.CutscenePlayerWatcher = LocalPlayer.AttributeChanged:Connect(RefreshCutscene)
