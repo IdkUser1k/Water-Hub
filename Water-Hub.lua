@@ -1327,7 +1327,7 @@ Groupboxes.General_Character:AddToggle("FlyToggle", {
 	Text = "Fly", Default = false, Tooltip = "Allows you to freely fly around the map."
 })
 Groupboxes.General_Character:AddToggle("AntiClimb", {
-    Text = "Anti Climb", Default = false, Tooltip = "Prevents upward jumps and pushes the character down while airborne."
+    Text = "Anti Climb", Default = false, Tooltip = "Reduces jump height without preventing jumping or affecting movement on the ground."
 })
 local AntiClimbAttachment, AntiClimbForce, AntiClimbRoot
 local function ClearAntiClimb()
@@ -1359,14 +1359,10 @@ local function UpdateAntiClimb()
         AntiClimbForce.ApplyAtCenterOfMass = true
         AntiClimbForce.Parent = RootPart
     end
-    local Velocity = RootPart.AssemblyLinearVelocity
     local Airborne = Humanoid and Humanoid.FloorMaterial == Enum.Material.Air
-    local Rising = Velocity.Y > 0.1
-    if Rising then
-        RootPart.AssemblyLinearVelocity = Vector3.new(Velocity.X, 0, Velocity.Z)
-    end
-    AntiClimbForce.Force = (Airborne or Rising)
-        and Vector3.new(0, -RootPart.AssemblyMass * Services.Workspace.Gravity * 12, 0)
+    local Rising = RootPart.AssemblyLinearVelocity.Y > 0.5
+    AntiClimbForce.Force = (Airborne and Rising)
+        and Vector3.new(0, -RootPart.AssemblyMass * Services.Workspace.Gravity, 0)
         or Vector3.zero
 end
 Toggles.AntiClimb:OnChanged(UpdateAntiClimb)
