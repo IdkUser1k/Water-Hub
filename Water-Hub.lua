@@ -1,8 +1,3 @@
-
---	Functions.Notify({Title = "Used For Notifications."})
---  Disabled = not Functions.CheckCompatability({"require"}), DisabledTooltip = Globals.IncompatibleMessage
--- 	Risky = Floor ~= "Mines" (Means it only works on mines)
-
 local LoadStart = tick()
 
 local GlobalEnvironment = getgenv()
@@ -166,6 +161,7 @@ local Objects = {
 	SeekObstructions = {},
 	Items = {},
 	Chests = {},
+	JewelryCases = {},
 	Currency = {},
 	Ladders = {},
 	Misc = {},
@@ -1082,13 +1078,22 @@ local function IsItemInPlayerInventory(Object)
     end
     return false
 end
+local function IsItemInsideJewelryCase(Object)
+    local Ancestor = Object.Parent
+    while Ancestor do
+        if Ancestor:IsA("Model") and Ancestor.Name == "JewelryCase" then return true end
+        Ancestor = Ancestor.Parent
+    end
+    return false
+end
 Functions.AddESP = function(ESPOptions, RoomBased)
 	local Object = ESPOptions.Object
     if ItemNames[Object.Name] then
+        if IsItemInsideJewelryCase(Object) then Functions.RemoveESP(Object) return end
         if not Object:IsA("Model") then return end
         if not ItemInventoryConnections[Object] then
             local InventoryConnection = Object.AncestryChanged:Connect(function()
-                if IsItemInPlayerInventory(Object) then
+                if IsItemInPlayerInventory(Object) or IsItemInsideJewelryCase(Object) then
                     Functions.RemoveESP(Object)
                 elseif Object:IsDescendantOf(Services.Workspace) and Toggles.ItemESPToggle and Toggles.ItemESPToggle.Value then
                     Functions.AddESP(ESPOptions, RoomBased)
@@ -1326,47 +1331,6 @@ Groupboxes.General_Character:AddToggle("SpeedBoostToggle", {
 Groupboxes.General_Character:AddToggle("FlyToggle", {
 	Text = "Fly", Default = false, Tooltip = "Allows you to freely fly around the map."
 })
-Groupboxes.General_Character:AddToggle("AntiClimb", {
-    Text = "Anti Climb", Default = false, Tooltip = "Reduces jump height without preventing jumping or affecting movement on the ground."
-})
-local AntiClimbAttachment, AntiClimbForce, AntiClimbRoot
-local function ClearAntiClimb()
-    if AntiClimbForce then
-        AntiClimbForce:Destroy()
-        AntiClimbForce = nil
-    end
-    if AntiClimbAttachment then
-        AntiClimbAttachment:Destroy()
-        AntiClimbAttachment = nil
-    end
-    AntiClimbRoot = nil
-end
-local function UpdateAntiClimb()
-    if not Toggles.AntiClimb.Value or LocalPlayer:GetAttribute("Alive") == false or not RootPart or not RootPart.Parent then
-        ClearAntiClimb()
-        return
-    end
-    if AntiClimbRoot ~= RootPart or not AntiClimbForce or not AntiClimbForce.Parent or not AntiClimbAttachment or not AntiClimbAttachment.Parent then
-        ClearAntiClimb()
-        AntiClimbRoot = RootPart
-        AntiClimbAttachment = Instance.new("Attachment")
-        AntiClimbAttachment.Name = "WaterHubAntiClimbAttachment"
-        AntiClimbAttachment.Parent = RootPart
-        AntiClimbForce = Instance.new("VectorForce")
-        AntiClimbForce.Name = "WaterHubAntiClimbForce"
-        AntiClimbForce.Attachment0 = AntiClimbAttachment
-        AntiClimbForce.RelativeTo = Enum.ActuatorRelativeTo.World
-        AntiClimbForce.ApplyAtCenterOfMass = true
-        AntiClimbForce.Parent = RootPart
-    end
-    local Airborne = Humanoid and Humanoid.FloorMaterial == Enum.Material.Air
-    local Rising = RootPart.AssemblyLinearVelocity.Y > 0.5
-    AntiClimbForce.Force = (Airborne and Rising)
-        and Vector3.new(0, -RootPart.AssemblyMass * Services.Workspace.Gravity, 0)
-        or Vector3.zero
-end
-Toggles.AntiClimb:OnChanged(UpdateAntiClimb)
-Connections.AntiClimbHandler = Services.RunService.Heartbeat:Connect(UpdateAntiClimb)
 Toggles.FlyToggle:AddKeyPicker("FlyKeybind", {
 	Text = "Fly", Default = "G", Mode = "Toggle", SyncToggleState = true
 })
@@ -1503,6 +1467,142 @@ Groupboxes.Self_Automation:AddToggle("AutoSolveAnchors", {
 	Text = "Auto Solve Anchors", Default = false,
 	Tooltip = "Automatically enters the correct code into anchors when you are near them."
 })
+Groupboxes.Self_Automation:AddToggle("AutoCandyValve", {
+    Text = "Auto Candy Valve", Default = false,
+    Tooltip = "Automatically turns the candy vault valve and submits the combination."
+})
+
+local CandyValve = {
+    Busy = false,
+    HeldButton = nil,
+    Completed = setmetatable({}, { __mode = "k" }),
+    Attempts = setmetatable({}, { __mode = "k" }),
+    Observed = setmetatable({}, { __mode = "k" }),
+    LastCheck = 0,
+}
+Toggles.AutoCandyValve:OnChanged(function(Value)
+    if not Value then CandyValve.Attempts = setmetatable({}, { __mode = "k" }) end
+end)
+function CandyValve.CanRun()
+    local CurrentCharacter = LocalPlayer.Character
+    return InstanceToken.Active and Toggles.AutoCandyValve.Value and CurrentCharacter
+        and CurrentCharacter:GetAttribute("InMinigame") == "CrackableVault"
+end
+function CandyValve.FindFrame()
+    local PlayerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not PlayerGui then return end
+    for _, Candidate in PlayerGui:GetDescendants() do
+        if Candidate:IsA("Frame") and Candidate.Name == "Frame"
+            and Candidate:FindFirstChild("Next") and Candidate:FindFirstChild("Previous") then
+            local Notches = Candidate:FindFirstChild("Progress")
+            local Guide = Notches and Notches:FindFirstChild("Guide")
+            if Guide and Guide:FindFirstChild("Progress") and Guide:FindFirstChild("Correct") then
+                return Candidate, Guide
+            end
+        end
+    end
+end
+function CandyValve.FindVault()
+    for _, Container in Services.Workspace:GetDescendants() do
+        if Container:GetAttribute("_Cracking") == true and Container:FindFirstChild("VaultRemote", true) then
+            return Container
+        end
+    end
+end
+function CandyValve.NotifyCompleted(Vault)
+    if not Vault or CandyValve.Completed[Vault] or not Toggles.AutoCandyValve.Value then return end
+    CandyValve.Completed[Vault] = true
+    Functions.Notify({ Title = "Auto Candy Valve", Body = "Successfully solved the candy valve." })
+end
+function CandyValve.Observe(Vault)
+    if not Vault or CandyValve.Observed[Vault] then return end
+    local Connection = Vault:GetAttributeChangedSignal("Activated"):Connect(function()
+        if Vault:GetAttribute("Activated") == true then CandyValve.NotifyCompleted(Vault) end
+    end)
+    CandyValve.Observed[Vault] = Connection
+    table.insert(Connections, Connection)
+    Vault.Destroying:Once(function()
+        Connection:Disconnect()
+        CandyValve.Observed[Vault] = nil
+    end)
+end
+function CandyValve.SetButton(Button, Held)
+    local FireSignal = Abysall.Environment and Abysall.Environment.firesignal
+    if FireSignal then
+        local Signal = Held and Button.MouseButton1Down or Button.MouseButton1Up
+        if pcall(FireSignal, Signal) then
+            CandyValve.HeldButton = Held and Button or nil
+            return true
+        end
+    end
+    local Success = pcall(function()
+        local Center = Button.AbsolutePosition + Button.AbsoluteSize / 2
+        game:GetService("VirtualInputManager"):SendMouseButtonEvent(Center.X, Center.Y, 0, Held, game, 0)
+    end)
+    if Success then CandyValve.HeldButton = Held and Button or nil end
+    return Success
+end
+function CandyValve.GetGap(Guide, Direction)
+    local Progress, Correct = Guide.Progress, Guide.Correct
+    local TargetX = Correct.AbsolutePosition.X + Correct.AbsoluteSize.X / 2
+    local EdgeX = Progress.AbsolutePosition.X + (Direction == 1 and Progress.AbsoluteSize.X or 0)
+    return (TargetX - EdgeX) * Direction, math.max(2, Correct.AbsoluteSize.X * 0.25)
+end
+function CandyValve.Solve(Frame, Guide, Vault)
+    local Progress = Guide.Progress
+    local TotalPhases = 0
+    for _, Notch in Frame.Progress:GetChildren() do
+        if Notch.Name == "Notch" and Notch:IsA("GuiObject") and Notch.Visible then TotalPhases += 1 end
+    end
+    if TotalPhases == 0 then TotalPhases = 3 end
+    local Phase = Frame.Previous.Visible and 2 or 1
+    local Retries = 0
+    while CandyValve.CanRun() and Frame.Parent and Phase <= TotalPhases and Retries < TotalPhases * 3 do
+        local Button = Phase == 2 and Frame.Previous or Frame.Next
+        local Direction = Phase == 2 and -1 or 1
+        local ReadyUntil = os.clock() + 2
+        while CandyValve.CanRun() and not Button.Visible and os.clock() < ReadyUntil do task.wait() end
+        if not CandyValve.CanRun() or not Button.Visible or not CandyValve.SetButton(Button, true) then return end
+        local Reached = false
+        local TurnUntil = os.clock() + 5
+        while CandyValve.CanRun() and Frame.Parent and os.clock() < TurnUntil do
+            local Gap, Tolerance = CandyValve.GetGap(Guide, Direction)
+            if Gap <= Tolerance then Reached = true break end
+            task.wait()
+        end
+        CandyValve.SetButton(Button, false)
+        if not Reached then return end
+        local NextButton = (Phase + 1) == 2 and Frame.Previous or Frame.Next
+        local PhaseUntil = os.clock() + 0.9
+        while CandyValve.CanRun() and os.clock() < PhaseUntil do
+            if Phase < TotalPhases and NextButton.Visible then break end
+            if Vault and Vault:GetAttribute("Activated") == true then
+                CandyValve.NotifyCompleted(Vault)
+                return
+            end
+            task.wait()
+        end
+        if Phase == TotalPhases then return end
+        if NextButton.Visible then Phase += 1 else Retries += 1 end
+    end
+end
+Connections.AutoCandyValveHandler = Services.RunService.Heartbeat:Connect(function()
+    if not CandyValve.CanRun() or CandyValve.Busy or os.clock() - CandyValve.LastCheck < 0.2 then return end
+    CandyValve.LastCheck = os.clock()
+    local Frame, Guide = CandyValve.FindFrame()
+    if not Frame then return end
+    local Vault = CandyValve.FindVault()
+    CandyValve.Observe(Vault)
+    if CandyValve.Completed[Vault or Frame] or (CandyValve.Attempts[Frame] or 0) >= 2 then return end
+    CandyValve.Attempts[Frame] = (CandyValve.Attempts[Frame] or 0) + 1
+    CandyValve.Busy = true
+    task.spawn(function()
+        local Success, Error = pcall(CandyValve.Solve, Frame, Guide, Vault)
+        if CandyValve.HeldButton then CandyValve.SetButton(CandyValve.HeldButton, false) end
+        if not Success then warn("Auto Candy Valve:", Error) end
+        CandyValve.Busy = false
+    end)
+end)
 Toggles.AutoBreakerBox:OnChanged(function(Value)
 	if Value and CurrentRooms:FindFirstChild("ElevatorBreaker", true) then
 		if not Globals.BreakerBoxInteracted then
@@ -4606,7 +4706,7 @@ Groupboxes.Exploits_BypassRight:AddToggle("InfiniteItemsToggle", {
 })
 Groupboxes.Exploits_BypassRight:AddDropdown("InfiniteItemsList", {
 	Text = "Item List",
-	Values = { "Lockpicks", "Skeleton Key", "Shears", "Multitool" },
+	Values = { "Lockpicks", "Skeleton Key", "Shears", "Multitool", "Garage Key" },
 	Multi = true, AllowNull = true,
 	Disabled = not Functions.CheckCompatability({"fireproximityprompt"}), DisabledTooltip = Globals.IncompatibleMessage
 })
@@ -5482,6 +5582,7 @@ end)
 Groupboxes.Visuals_ESP_Toggles:AddToggle("DoorESPToggle",       { Text = "Doors",        Default = false, Tooltip = "Highlights the next door." })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("HidingSpotESPToggle", { Text = "Hiding Spots", Default = false, Tooltip = "Highlights places where you can hide from entities" })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("PlayerESPToggle",     { Text = "Players",      Default = false, Tooltip = "Highlights other players." })
+Groupboxes.Visuals_ESP_Toggles:AddToggle("JewelryCaseESPToggle", { Text = "Esp JewelryCase", Default = false, Tooltip = "Highlights jewelry cases and names the model inside." })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("ChestESPToggle",      { Text = "Chests",       Default = false, Tooltip = "Highlights objects that can contain loot." })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("ItemESPToggle",       { Text = "Items",        Default = false, Tooltip = "Highlights all collectable items/consumables." })
 Groupboxes.Visuals_ESP_Toggles:AddToggle("CurrencyESPToggle",   { Text = "Currency",     Default = false, Tooltip = "Highlights all currency that spawns." })
@@ -5502,6 +5603,7 @@ Groupboxes.Visuals_ESP_Toggles:AddToggle("EntityESPToggle",     { Text = "Entiti
 Toggles.DoorESPToggle:AddColorPicker("DoorESPColor",           { Text = "Doors",        Default = Color3.fromRGB(0, 200, 255),  Transparency = 0 })
 Toggles.HidingSpotESPToggle:AddColorPicker("HidingSpotESPColor", { Text = "Hiding Spots", Default = Color3.fromRGB(255, 170, 0),  Transparency = 0 })
 Toggles.PlayerESPToggle:AddColorPicker("PlayerESPColor",       { Text = "Players",      Default = Color3.fromRGB(255, 255, 255), Transparency = 0 })
+Toggles.JewelryCaseESPToggle:AddColorPicker("JewelryCaseESPColor", { Text = "JewelryCase", Default = Color3.fromRGB(255, 210, 95), Transparency = 0 })
 Toggles.ChestESPToggle:AddColorPicker("ChestESPColor",         { Text = "Chests",       Default = Color3.fromRGB(255, 255, 0),   Transparency = 0 })
 Toggles.ItemESPToggle:AddColorPicker("ItemESPColor",           { Text = "Items",        Default = Color3.fromRGB(170, 0, 255),   Transparency = 0 })
 Toggles.CurrencyESPToggle:AddColorPicker("CurrencyESPColor",   { Text = "Currency",     Default = Color3.fromRGB(255, 255, 0),   Transparency = 0 })
@@ -5574,6 +5676,32 @@ Options.PlayerESPColor:OnChanged(function(Value)
 	end
 end)
 
+local function GetJewelryCaseLabel(Case)
+    for _, Child in Case:GetDescendants() do
+        if Child:IsA("Model") then
+            return "JewelryCase (" .. Child.Name .. ")"
+        end
+    end
+    return "JewelryCase"
+end
+
+local function RefreshJewelryCaseESP(Case)
+    Functions.RemoveESP(Case)
+    if Toggles.JewelryCaseESPToggle.Value and Case.Parent then
+        Functions.AddESP({ Object = Case, Text = GetJewelryCaseLabel(Case), Color = Options.JewelryCaseESPColor.Value }, Case:GetAttribute("ParentRoom") ~= nil)
+    end
+end
+
+Toggles.JewelryCaseESPToggle:OnChanged(function()
+    for _, Case in Objects.JewelryCases do
+        RefreshJewelryCaseESP(Case)
+    end
+end)
+Options.JewelryCaseESPColor:OnChanged(function(Color)
+    for _, Case in Objects.JewelryCases do
+        Abysall.ESPLibrary:UpdateObjectColor(Case, Color)
+    end
+end)
 Toggles.ChestESPToggle:OnChanged(function(Value)
 	for _, Object in Objects.Chests do
 		if Value then
@@ -6504,7 +6632,11 @@ Functions.HandleCharacter = function(NewCharacter)
 	CollisionPart  = NewCharacter:FindFirstChild("CollisionPart") or NewCharacter:FindFirstChild("Collision")
     local function RefreshCutscene()
         local InCutscene = Character:GetAttribute("InCutscene") == true or LocalPlayer:GetAttribute("InCutscene") == true
-        HandleCutsceneState(InCutscene or LocalPlayer:GetAttribute("Alive") == false)
+        local function MinigameActive(Value)
+            return Value ~= nil and Value ~= false and Value ~= "" and Value ~= " "
+        end
+        local InMinigame = MinigameActive(Character:GetAttribute("InMinigame")) or MinigameActive(LocalPlayer:GetAttribute("InMinigame"))
+        HandleCutsceneState(InCutscene or InMinigame or LocalPlayer:GetAttribute("Alive") == false)
     end
     Connections.CutsceneCharacterWatcher = Character.AttributeChanged:Connect(RefreshCutscene)
     Connections.CutscenePlayerWatcher = LocalPlayer.AttributeChanged:Connect(RefreshCutscene)
@@ -6723,7 +6855,7 @@ Functions.HandleCharacter = function(NewCharacter)
 	end)
 
 	Connections.AnimationHandler = Character.ChildAdded:Connect(function()
-		local ToolNames = { "Lockpick","Shears","SkeletonKey","Key","GeneratorFuse","KeyElectrical","KeyBackdoor","KeyIron", "Multitool" }
+		local ToolNames = { "Lockpick","Shears","SkeletonKey","Key","GeneratorFuse","KeyElectrical","KeyBackdoor","KeyIron", "Multitool", "KeyGarage" }
 		local Tool
 		for _, Name in ToolNames do
 			Tool = Character:FindFirstChild(Name)
@@ -7521,7 +7653,28 @@ Functions.HandleObject = function(Object)
             end
 		end
 		table.insert(Objects.Obstructions, Object)
-	elseif Name == "ChestBox" or Name == "ChestBoxLocked" then
+	elseif Name == "JewelryCase" and Object:IsA("Model") then
+        table.insert(Objects.JewelryCases, Object)
+        RefreshJewelryCaseESP(Object)
+        local function RefreshContents(Child)
+            if Child:IsA("Model") then
+                task.defer(function()
+                    if Object.Parent then RefreshJewelryCaseESP(Object) end
+                end)
+            end
+        end
+        local Added = Object.DescendantAdded:Connect(RefreshContents)
+        local Removed = Object.DescendantRemoving:Connect(RefreshContents)
+        table.insert(Connections, Added)
+        table.insert(Connections, Removed)
+        Object.Destroying:Once(function()
+            Added:Disconnect()
+            Removed:Disconnect()
+            Functions.RemoveESP(Object)
+            local Index = table.find(Objects.JewelryCases, Object)
+            if Index then table.remove(Objects.JewelryCases, Index) end
+        end)
+    elseif Name == "ChestBox" or Name == "ChestBoxLocked" then
 		if Toggles.ChestESPToggle.Value then Functions.AddESP({ Object = Object, Text = Object:GetAttribute("Locked") and "Locked Chest" or "Chest", Color = Options.ChestESPColor.Value }, true) end
 		table.insert(Objects.Chests, Object)
 	elseif Name == "Toolbox" or Name == "Toolbox_Locked" then
@@ -7539,7 +7692,7 @@ Functions.HandleObject = function(Object)
 	elseif Name == "MouseHole" then
 		if Toggles.ChestESPToggle.Value then Functions.AddESP({ Object = Object, Text = "Mouse", Color = Options.ChestESPColor.Value }, true) end
 		table.insert(Objects.Chests, Object)
-	elseif Object:IsA("Model") and ItemNames[Name] and (Object:FindFirstChild("ModulePrompt") or table.find({ "Drive", "KeyJewelry", "KeyGarage", "CoinRoll", "PocketMirror", "PeachCobbler", "ObjectScanner", "GiantGummyworm", "WizardHat", "CandyBaskey", "CandyBasket", "CandyBucket", "ChocolateCrate", "Haybale", "LargeCandyBag", "BrokenHeadstone" }, Name)) then
+	elseif Object:IsA("Model") and ItemNames[Name] and (Object:FindFirstChild("ModulePrompt") or table.find({ "Drive", "KeyGarage", "CoinRoll", "PocketMirror", "PeachCobbler", "ObjectScanner", "GiantGummyworm", "WizardHat", "CandyBaskey", "CandyBasket", "CandyBucket", "ChocolateCrate", "Haybale", "LargeCandyBag", "BrokenHeadstone" }, Name)) then
 		if Toggles.ItemESPToggle.Value then Functions.AddESP({ Object = Object, Text = (Name == "Drive" and Object:GetAttribute("Tool_ScannerMode")) or ItemNames[Name], Color = Options.ItemESPColor.Value }, Object:GetAttribute("ParentRoom") ~= nil) end
 		if Name == "LotusHolder" or Name == "LotusPetalPickup" then
 			Object.Handle:GetPropertyChangedSignal("LocalTransparencyModifier"):Connect(function()
@@ -7844,7 +7997,7 @@ end
 
 Connections.PromptAnimationFixer1 = Services.ProximityPromptService.PromptButtonHoldBegan:Connect(function(Object)
 	if not Object:GetAttribute("FakePrompt") then return end
-	local ToolNames = { "Lockpick","Shears","SkeletonKey","Key","GeneratorFuse","KeyElectrical","KeyBackdoor","KeyIron", "Multitool" }
+	local ToolNames = { "Lockpick","Shears","SkeletonKey","Key","GeneratorFuse","KeyElectrical","KeyBackdoor","KeyIron", "Multitool", "KeyGarage" }
 	local AnimateToolNames = { "Lockpick","Shears","SkeletonKey","Key","KeyElectrical","KeyBackdoor","KeyIron", "Multitool" }
 	local Tool
 	for _, N in ToolNames do Tool = Character:FindFirstChild(N) if Tool then break end end
@@ -7881,7 +8034,7 @@ Globals.ObjectQueue = {}
 local AllowedInstances = {
 	Lava=true, GoldPile=true, KeyObtain=true, Drakobloxxer=true, FuseObtain=true,
 	MinesGenerator=true, JeffTheKiller=true, Snare=true, FakeDoor=true, DoorFake=true, SideroomSpace=true,
-	ChestBox=true, ChestBoxLocked=true, Chest_Vine=true, Locker_Small_Locked=true, Toolbox=true,
+	ChestBox=true, ChestBoxLocked=true, Chest_Vine=true, JewelryCase=true, Locker_Small_Locked=true, Toolbox=true,
 	Toolbox_Locked=true, Wardrobe=true, ["Wardrobe-FOOLS26"]=true, Toolshed=true, Toolshed_Small=true,
 	Bed=true, MinesAnchor=true, Double_Bed=true, RetroWardrobe=true, Backdoor_Wardrobe=true,
 	Rooms_Locker=true, Rooms_Locker_Fridge=true, Locker_Large=true, FigureRig=true, FigureRagdoll=true,
@@ -8053,7 +8206,7 @@ end
 local AutoInteractBlacklist = {
 	HidePrompt=true, RiftPrompt=true, StarRiftPrompt=true, InteractPrompt=true, ClimbPrompt=true,
 	DonatePrompt=true, DialoguePrompt=true, RevivePrompt=true, EnterPrompt=true, AnimatePrompt=true,
-	ToolEventPrompt=true, Prompt=true, PropPrompt=true
+	ToolEventPrompt=true, Prompt=true, PropPrompt=true, UnlockPrompt=true
 }
 
 local TriggerDebounce = false
@@ -8088,7 +8241,8 @@ local function IsHidingSpotPrompt(Prompt)
 end
 
 Functions.TriggerPrompt = function(Prompt)
-	if not Prompt or not Prompt.Parent then return end
+    if not Prompt or not Prompt.Parent then return end
+    if Prompt.Name == "UnlockPrompt" then return end
     if IsStemsPrompt(Prompt) then return end
 	if Character:GetAttribute("Hiding") == true then return end
 	local HidingSpot = GetHidingSpotModel(Prompt)
@@ -8236,7 +8390,7 @@ end)
 Connections.InfiniteItemsHandler = Services.ProximityPromptService.PromptTriggered:Connect(function(Object)
 	if not Object:GetAttribute("FakePrompt") then return end
 
-	local ToolNames = { "Lockpick","Shears","SkeletonKey","Key","GeneratorFuse","KeyElectrical","KeyBackdoor","KeyIron", "Multitool" }
+	local ToolNames = { "Lockpick","Shears","SkeletonKey","Key","GeneratorFuse","KeyElectrical","KeyBackdoor","KeyIron", "Multitool", "KeyGarage" }
 	local AnimateToolNames = { "Lockpick","Shears","SkeletonKey","Key","KeyElectrical","KeyBackdoor","KeyIron", "Multitool" }
 	local Tool
 	for _, N in ToolNames do Tool = Character:FindFirstChild(N) if Tool then break end end
@@ -8270,7 +8424,7 @@ Connections.InfiniteItemsHandler = Services.ProximityPromptService.PromptTrigger
 
 	local AnyTool = Character:FindFirstChildOfClass("Tool")
 	local ToolData = AnyTool and ItemNames[AnyTool.Name]
-	if AnyTool and ToolData and Toggles.InfiniteItemsToggle.Value and Options.InfiniteItemsList.Value[ToolData] then
+	if AnyTool and AnyTool.Name ~= "KeyJewelry" and ToolData and Toggles.InfiniteItemsToggle.Value and Options.InfiniteItemsList.Value[ToolData] then
 		Drops.ChildAdded:Once(function(NewTool)
 			local Prompt = NewTool:FindFirstChild("ModulePrompt")
 			local RealPrompt = FakePrompts[Object]
@@ -8460,8 +8614,8 @@ LocalPlayer.CharacterAdded:Connect(function(NewCharacter)
 end)
 
 Library:OnUnload(function()
-	ClearAntiClimb()
 	InstanceToken.Active = false
+	if CandyValve.HeldButton then CandyValve.SetButton(CandyValve.HeldButton, false) end
 	LoopFogRunning = false
 	if LastStemUnequippedConnection then LastStemUnequippedConnection:Disconnect() end
 	if LastStemTool then StopStemToolAnimations(LastStemTool) end
