@@ -1,3 +1,642 @@
+if not game:IsLoaded() then game.Loaded:Wait() end
+local universeId = game.GameId
+if universeId ~= 10080411105 and universeId ~= 6375110339 and universeId ~= 2440500124 then
+    local starterGui = game:GetService("StarterGui")
+    for _ = 1, 10 do
+        if pcall(function() starterGui:SetCore("SendNotification", {Title = "Water-Hub", Text = "This game is not supported by Water-Hub.", Duration = 5}) end) then break end
+        task.wait(0.2)
+    end
+    return
+end
+if universeId == 10080411105 then
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+if not game:IsLoaded() then game.Loaded:Wait() end
+local player = Players.LocalPlayer
+local environment = getgenv()
+if environment.WaterHubMinimal and environment.WaterHubMinimal.Unload then
+    environment.WaterHubMinimal.Unload()
+end
+local baseUrl = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local library = loadstring(game:HttpGet(baseUrl .. "Library.lua"))()
+local themeManager = loadstring(game:HttpGet(baseUrl .. "addons/ThemeManager.lua"))()
+local saveManager = loadstring(game:HttpGet(baseUrl .. "addons/SaveManager.lua"))()
+local toggles = library.Toggles
+local options = library.Options
+local window = library:CreateWindow({Title = "Water-Hub", Footer = "Water-Hub", Icon = 114389809944671, NotifySide = "Right", ShowCustomCursor = false, AutoShow = true, Center = true, TabPadding = 3, MenuFadeTime = 0, CornerRadius = 6})
+local tabs = {General = window:AddTab("General", "house"), Settings = window:AddTab("Settings", "settings")}
+local characterGroup = tabs.General:AddLeftGroupbox("Character")
+local promptGroup = tabs.General:AddRightGroupbox("Prompts")
+local visualGroup = tabs.General:AddRightGroupbox("Visuals")
+local automationGroup = tabs.General:AddLeftGroupbox("Automation")
+local settingsGroup = tabs.Settings:AddLeftGroupbox("Menu")
+local character, humanoid, root, baseSpeed
+local speedApplied = false
+local originalPrompts = {}
+local originalLighting = {fogEnd = Lighting.FogEnd, brightness = Lighting.Brightness, ambient = Lighting.Ambient, outdoorAmbient = Lighting.OutdoorAmbient, clockTime = Lighting.ClockTime, globalShadows = Lighting.GlobalShadows}
+local originalAtmospheres = {}
+local connections = {}
+local unloaded = false
+local function restorePrompts()
+    for prompt, original in pairs(originalPrompts) do
+        if prompt.Parent then
+            prompt.HoldDuration = original.hold
+            prompt.MaxActivationDistance = original.distance
+            prompt.RequiresLineOfSight = original.lineOfSight
+        end
+    end
+end
+local function restoreLighting()
+    Lighting.FogEnd = originalLighting.fogEnd
+    Lighting.Brightness = originalLighting.brightness
+    Lighting.Ambient = originalLighting.ambient
+    Lighting.OutdoorAmbient = originalLighting.outdoorAmbient
+    Lighting.ClockTime = originalLighting.clockTime
+    Lighting.GlobalShadows = originalLighting.globalShadows
+    for atmosphere, density in pairs(originalAtmospheres) do
+        if atmosphere.Parent then atmosphere.Density = density end
+    end
+end
+local halloweenCleanup
+local function unload()
+    if unloaded then return end
+    if halloweenCleanup then halloweenCleanup() end
+    unloaded = true
+    if humanoid and baseSpeed then humanoid.WalkSpeed = baseSpeed end
+    restorePrompts()
+    restoreLighting()
+    for _, connection in ipairs(connections) do connection:Disconnect() end
+    library:Unload()
+    environment.WaterHubMinimal = nil
+end
+environment.WaterHubMinimal = {Unload = unload}
+library:OnUnload(function()
+    if unloaded then return end
+    if halloweenCleanup then halloweenCleanup() end
+    unloaded = true
+    if humanoid and baseSpeed then humanoid.WalkSpeed = baseSpeed end
+    restorePrompts()
+    restoreLighting()
+    for _, connection in ipairs(connections) do connection:Disconnect() end
+    environment.WaterHubMinimal = nil
+end)
+characterGroup:AddSlider("SpeedValue", {Text = "Speed", Min = 0, Max = 300, Default = 0, Rounding = 0, Compact = true})
+characterGroup:AddToggle("LoopSpeed", {Text = "Speed", Default = false})
+characterGroup:AddToggle("RemoveAcceleration", {Text = "Remove Acceleration", Default = false})
+promptGroup:AddToggle("InstantPrompt", {Text = "Instant Prompt", Default = false})
+promptGroup:AddToggle("MultiplyPromptDistance", {Text = "Multiply Prompt Distance", Default = false})
+promptGroup:AddSlider("PromptMultiplier", {Text = "Prompt Distance Multiplier", Min = 1, Max = 30, Default = 2, Rounding = 1, Compact = true})
+promptGroup:AddToggle("PromptClip", {Text = "Prompt Clip", Default = false})
+visualGroup:AddToggle("NoFog", {Text = "No Fog", Default = false})
+visualGroup:AddToggle("LoopNoFog", {Text = "Loop No Fog", Default = false})
+visualGroup:AddToggle("FullBright", {Text = "Full Bright", Default = false})
+local halloweenToken = 0
+local halloweenNoClipEnabled = false
+local halloweenCollisionOriginal = {}
+local halloweenCollisionConnection
+local function restoreHalloweenCollision()
+    for part, canCollide in pairs(halloweenCollisionOriginal) do
+        if part.Parent then part.CanCollide = canCollide end
+        halloweenCollisionOriginal[part] = nil
+    end
+end
+halloweenCleanup = function()
+    halloweenNoClipEnabled = false
+    if halloweenCollisionConnection then
+        halloweenCollisionConnection:Disconnect()
+        halloweenCollisionConnection = nil
+    end
+    restoreHalloweenCollision()
+end
+automationGroup:AddToggle("AutoHalloweenEvent", {Text = "Auto Halloween Event", Default = false})
+toggles.AutoHalloweenEvent:OnChanged(function()
+    halloweenToken += 1
+    if not toggles.AutoHalloweenEvent.Value then
+        halloweenCleanup()
+        return
+    end
+    halloweenCleanup()
+    halloweenCollisionConnection = RunService.Stepped:Connect(function()
+        if not halloweenNoClipEnabled then return end
+        local currentCharacter = player.Character
+        if not currentCharacter then return end
+        for _, part in ipairs(currentCharacter:GetDescendants()) do
+            if part:IsA("BasePart") then
+                if halloweenCollisionOriginal[part] == nil then
+                    halloweenCollisionOriginal[part] = part.CanCollide
+                end
+                part.CanCollide = false
+            end
+        end
+    end)
+    local token = halloweenToken
+    local function active()
+        return not unloaded and toggles.AutoHalloweenEvent.Value and token == halloweenToken
+    end
+    local function teleportTo(target, offset)
+        local currentCharacter = player.Character
+        local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
+        local currentHumanoid = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
+        if not currentRoot or not currentHumanoid or currentHumanoid.Health <= 0 then return false end
+        currentCharacter:PivotTo(target.CFrame + (offset or Vector3.zero))
+        return true
+    end
+    task.spawn(function()
+        halloweenNoClipEnabled = true
+        local candlesSeen = false
+        while active() do
+            local activeCandles = {}
+            for _, descendant in ipairs(workspace:GetDescendants()) do
+                if descendant:IsA("Model") and descendant.Name == "Candle" then
+                    candlesSeen = true
+                    local candle = descendant:FindFirstChild("Candle", true)
+                    if candle and candle:IsA("UnionOperation") then
+                        local prompt = candle:FindFirstChildWhichIsA("ProximityPrompt", true)
+                        if prompt and prompt.Enabled then
+                            table.insert(activeCandles, {Part = candle, Prompt = prompt})
+                        end
+                    end
+                end
+            end
+            if candlesSeen and #activeCandles == 0 then break end
+            for _, entry in ipairs(activeCandles) do
+                if not active() then return end
+                local prompt = entry.Prompt
+                if prompt.Enabled and entry.Part:IsDescendantOf(workspace) and teleportTo(entry.Part) then
+                    task.wait(0.15)
+                    if not active() then return end
+                    if prompt.Enabled then
+                        if type(fireproximityprompt) == "function" then
+                            fireproximityprompt(prompt)
+                        else
+                            prompt:InputHoldBegin()
+                            task.wait(prompt.HoldDuration + 0.1)
+                            prompt:InputHoldEnd()
+                        end
+                    end
+                    task.wait(0.7)
+                end
+            end
+            task.wait(0.1)
+        end
+        halloweenNoClipEnabled = false
+        restoreHalloweenCollision()
+        while active() do
+            local found = false
+            for _, descendant in ipairs(workspace:GetDescendants()) do
+                if descendant:IsA("Model") and descendant.Name == "Ahlelele Ahlelas" then
+                    found = true
+                    break
+                end
+            end
+            if found then break end
+            task.wait(0.25)
+        end
+        local orbsSeen = false
+        local nextIndex = 1
+        while active() do
+            local orbs = {}
+            for _, descendant in ipairs(workspace:GetDescendants()) do
+                if descendant:IsA("Model") and descendant.Name == "Orbs" then
+                    for _, part in ipairs(descendant:GetDescendants()) do
+                        if part:IsA("BasePart") and part:IsDescendantOf(workspace) then
+                            orbsSeen = true
+                            table.insert(orbs, part)
+                        end
+                    end
+                end
+            end
+            if orbsSeen and #orbs == 0 then break end
+            if #orbs > 0 then
+                if nextIndex > #orbs then nextIndex = 1 end
+                local target = orbs[nextIndex]
+                nextIndex += 1
+                if target:IsDescendantOf(workspace) then teleportTo(target) end
+                task.wait(0.7)
+            else
+                task.wait(0.25)
+            end
+        end
+        halloweenNoClipEnabled = true
+        local stuff = workspace:FindFirstChild("Stuff")
+        local route = stuff and stuff:FindFirstChild("EscapeRoute")
+        local magic = route and route:FindFirstChild("MagicSpeel", true)
+        local destination
+        if magic then
+            if magic:IsA("BasePart") then
+                destination = magic
+            elseif magic:IsA("SpecialMesh") and magic.Parent and magic.Parent:IsA("BasePart") then
+                destination = magic.Parent
+            end
+        end
+        local destinationCFrame = destination and (destination.CFrame + Vector3.new(0, 3, 0)) or CFrame.new(-18, 70, -754)
+        local started = os.clock()
+        while active() and os.clock() - started < 3 do
+            local currentCharacter = player.Character
+            local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
+            local currentHumanoid = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
+            if currentRoot and currentHumanoid and currentHumanoid.Health > 0 then
+                currentCharacter:PivotTo(destinationCFrame)
+                currentRoot.AssemblyLinearVelocity = Vector3.zero
+            end
+            RunService.Heartbeat:Wait()
+        end
+        if active() then
+            library:Notify({Title = "Water-Hub", Description = "Halloween event completed successfully!", Time = 5})
+            toggles.AutoHalloweenEvent:SetValue(false)
+        end
+    end)
+end)
+settingsGroup:AddButton({Text = "Unload Water-Hub", Func = unload})
+settingsGroup:AddLabel("Menu key"):AddKeyPicker("MenuKeybind", {Default = "LeftAlt", NoUI = true, Text = "Menu keybind"})
+library.ToggleKeybind = options.MenuKeybind
+themeManager.BuiltInThemes = {
+    ["Default"] = {1, {FontColor = "e8f7ff", MainColor = "102838", AccentColor = "22b8cf", BackgroundColor = "071822", OutlineColor = "275166"}},
+    ["Amethyst"] = {2, {FontColor = "f5ecff", MainColor = "2b203d", AccentColor = "ad7be9", BackgroundColor = "191326", OutlineColor = "4d3b65"}},
+    ["Forest"] = {3, {FontColor = "e9ffef", MainColor = "183526", AccentColor = "58cb8b", BackgroundColor = "0e2017", OutlineColor = "315b40"}},
+    ["Rose"] = {4, {FontColor = "fff0f5", MainColor = "3b202b", AccentColor = "ef7fa6", BackgroundColor = "23131b", OutlineColor = "63364a"}},
+    ["Slate"] = {5, {FontColor = "edf1f5", MainColor = "29313a", AccentColor = "8eb2d2", BackgroundColor = "171e25", OutlineColor = "465462"}},
+    ["Solar"] = {6, {FontColor = "fff7e6", MainColor = "3b3020", AccentColor = "f5bf59", BackgroundColor = "241d12", OutlineColor = "675239"}},
+    ["Crimson"] = {7, {FontColor = "fff1f1", MainColor = "382022", AccentColor = "e3656a", BackgroundColor = "211416", OutlineColor = "60383c"}},
+    ["Frost"] = {8, {FontColor = "eafcff", MainColor = "24343e", AccentColor = "8bdde9", BackgroundColor = "14232b", OutlineColor = "3d5c69"}},
+    ["Lavender"] = {9, {FontColor = "f6f2ff", MainColor = "302c42", AccentColor = "b9a2f4", BackgroundColor = "1c1a2b", OutlineColor = "554d70"}},
+    ["Graphite"] = {10, {FontColor = "f5f5f5", MainColor = "252525", AccentColor = "86a9ff", BackgroundColor = "141414", OutlineColor = "444444"}}
+}
+themeManager:SetLibrary(library)
+saveManager:SetLibrary(library)
+saveManager:IgnoreThemeSettings()
+saveManager:SetIgnoreIndexes({"MenuKeybind"})
+themeManager:SetDefaultTheme({AccentColor = Color3.fromRGB(55, 155, 225)})
+themeManager:SetFolder("Water-Hub")
+saveManager:SetFolder("Water-Hub")
+saveManager:SetSubFolder("TCU Recode")
+themeManager:ApplyToTab(tabs.Settings)
+saveManager:BuildConfigSection(tabs.Settings)
+local function bind(model)
+    character = model
+    humanoid = model:WaitForChild("Humanoid")
+    root = model:WaitForChild("HumanoidRootPart")
+    baseSpeed = humanoid.WalkSpeed
+    speedApplied = false
+end
+if player.Character then task.spawn(bind, player.Character) end
+table.insert(connections, player.CharacterAdded:Connect(bind))
+local function updatePrompt(prompt)
+    local original = originalPrompts[prompt]
+    if not original then
+        original = {hold = prompt.HoldDuration, distance = prompt.MaxActivationDistance, lineOfSight = prompt.RequiresLineOfSight}
+        originalPrompts[prompt] = original
+    end
+    prompt.HoldDuration = toggles.InstantPrompt.Value and 0 or original.hold
+    prompt.MaxActivationDistance = original.distance * (toggles.MultiplyPromptDistance.Value and options.PromptMultiplier.Value or 1)
+    prompt.RequiresLineOfSight = toggles.PromptClip.Value and false or original.lineOfSight
+end
+local function updatePrompts()
+    for _, descendant in ipairs(workspace:GetDescendants()) do
+        if descendant:IsA("ProximityPrompt") then updatePrompt(descendant) end
+    end
+end
+toggles.InstantPrompt:OnChanged(updatePrompts)
+toggles.MultiplyPromptDistance:OnChanged(updatePrompts)
+toggles.PromptClip:OnChanged(updatePrompts)
+options.PromptMultiplier:OnChanged(updatePrompts)
+local function applyFog()
+    local enabled = toggles.NoFog.Value or toggles.LoopNoFog.Value
+    Lighting.FogEnd = enabled and 10000000 or originalLighting.fogEnd
+    for _, descendant in ipairs(Lighting:GetDescendants()) do
+        if descendant:IsA("Atmosphere") then
+            if originalAtmospheres[descendant] == nil then originalAtmospheres[descendant] = descendant.Density end
+            descendant.Density = enabled and 0 or originalAtmospheres[descendant]
+        end
+    end
+end
+local function applyFullBright()
+    if toggles.FullBright.Value then
+        Lighting.Brightness = 3
+        Lighting.Ambient = Color3.new(1, 1, 1)
+        Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+        Lighting.ClockTime = 14
+        Lighting.GlobalShadows = false
+    else
+        Lighting.Brightness = originalLighting.brightness
+        Lighting.Ambient = originalLighting.ambient
+        Lighting.OutdoorAmbient = originalLighting.outdoorAmbient
+        Lighting.ClockTime = originalLighting.clockTime
+        Lighting.GlobalShadows = originalLighting.globalShadows
+    end
+end
+toggles.NoFog:OnChanged(applyFog)
+toggles.LoopNoFog:OnChanged(applyFog)
+toggles.FullBright:OnChanged(applyFullBright)
+table.insert(connections, workspace.DescendantAdded:Connect(function(descendant)
+    if descendant:IsA("ProximityPrompt") then updatePrompt(descendant) end
+end))
+local elapsed = 0
+table.insert(connections, RunService.Heartbeat:Connect(function(delta)
+    if not humanoid or not root or not character or not character.Parent then return end
+    if toggles.LoopSpeed.Value then
+        if not speedApplied then baseSpeed = humanoid.WalkSpeed end
+        humanoid.WalkSpeed = (baseSpeed or 0) + options.SpeedValue.Value
+        speedApplied = true
+    elseif speedApplied and baseSpeed then
+        humanoid.WalkSpeed = baseSpeed
+        speedApplied = false
+    end
+    if toggles.RemoveAcceleration.Value then
+        local velocity = root.AssemblyLinearVelocity
+        local direction = humanoid.MoveDirection
+        local speed = humanoid.WalkSpeed
+        root.AssemblyLinearVelocity = Vector3.new(direction.X * speed, velocity.Y, direction.Z * speed)
+    end
+    elapsed += delta
+    if elapsed >= 0.25 then
+        elapsed = 0
+        updatePrompts()
+        if toggles.LoopNoFog.Value then applyFog() end
+        if toggles.FullBright.Value then applyFullBright() end
+    end
+end))
+saveManager:LoadAutoloadConfig()
+elseif universeId == 6375110339 then
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local CollectionService = game:GetService("CollectionService")
+if not game:IsLoaded() then game.Loaded:Wait() end
+local player = Players.LocalPlayer
+local environment = getgenv()
+if environment.WaterHubMinimal and environment.WaterHubMinimal.Unload then
+    environment.WaterHubMinimal.Unload()
+end
+local baseUrl = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local library = loadstring(game:HttpGet(baseUrl .. "Library.lua"))()
+local themeManager = loadstring(game:HttpGet(baseUrl .. "addons/ThemeManager.lua"))()
+local saveManager = loadstring(game:HttpGet(baseUrl .. "addons/SaveManager.lua"))()
+local toggles = library.Toggles
+local options = library.Options
+local window = library:CreateWindow({Title = "Water-Hub", Footer = "Water-Hub", Icon = 114389809944671, NotifySide = "Right", ShowCustomCursor = false, AutoShow = true, Center = true, TabPadding = 3, MenuFadeTime = 0, CornerRadius = 6})
+local tabs = {General = window:AddTab("General", "house"), Settings = window:AddTab("Settings", "settings")}
+local characterGroup = tabs.General:AddLeftGroupbox("Character")
+local promptGroup = tabs.General:AddRightGroupbox("Prompts")
+local visualGroup = tabs.General:AddRightGroupbox("Visuals")
+local combatGroup = tabs.General:AddLeftGroupbox("Combat")
+local settingsGroup = tabs.Settings:AddLeftGroupbox("Menu")
+local character, humanoid, root, baseSpeed
+local speedApplied = false
+local originalPrompts = {}
+local originalLighting = {fogEnd = Lighting.FogEnd, brightness = Lighting.Brightness, ambient = Lighting.Ambient, outdoorAmbient = Lighting.OutdoorAmbient, clockTime = Lighting.ClockTime, globalShadows = Lighting.GlobalShadows}
+local originalAtmospheres = {}
+local connections = {}
+local unloaded = false
+local function restorePrompts()
+    for prompt, original in pairs(originalPrompts) do
+        if prompt.Parent then
+            prompt.HoldDuration = original.hold
+            prompt.MaxActivationDistance = original.distance
+            prompt.RequiresLineOfSight = original.lineOfSight
+        end
+    end
+end
+local function restoreLighting()
+    Lighting.FogEnd = originalLighting.fogEnd
+    Lighting.Brightness = originalLighting.brightness
+    Lighting.Ambient = originalLighting.ambient
+    Lighting.OutdoorAmbient = originalLighting.outdoorAmbient
+    Lighting.ClockTime = originalLighting.clockTime
+    Lighting.GlobalShadows = originalLighting.globalShadows
+    for atmosphere, density in pairs(originalAtmospheres) do
+        if atmosphere.Parent then atmosphere.Density = density end
+    end
+end
+local function unload()
+    if unloaded then return end
+    unloaded = true
+    if humanoid and baseSpeed then humanoid.WalkSpeed = baseSpeed end
+    restorePrompts()
+    restoreLighting()
+    for _, connection in ipairs(connections) do connection:Disconnect() end
+    library:Unload()
+    environment.WaterHubMinimal = nil
+end
+environment.WaterHubMinimal = {Unload = unload}
+library:OnUnload(function()
+    if unloaded then return end
+    unloaded = true
+    if humanoid and baseSpeed then humanoid.WalkSpeed = baseSpeed end
+    restorePrompts()
+    restoreLighting()
+    for _, connection in ipairs(connections) do connection:Disconnect() end
+    environment.WaterHubMinimal = nil
+end)
+characterGroup:AddSlider("SpeedValue", {Text = "Speed", Min = 0, Max = 300, Default = 0, Rounding = 0, Compact = true})
+characterGroup:AddToggle("LoopSpeed", {Text = "Speed", Default = false})
+characterGroup:AddToggle("RemoveAcceleration", {Text = "Remove Acceleration", Default = false})
+promptGroup:AddToggle("InstantPrompt", {Text = "Instant Prompt", Default = false})
+promptGroup:AddToggle("MultiplyPromptDistance", {Text = "Multiply Prompt Distance", Default = false})
+promptGroup:AddSlider("PromptMultiplier", {Text = "Prompt Distance Multiplier", Min = 1, Max = 30, Default = 2, Rounding = 1, Compact = true})
+promptGroup:AddToggle("PromptClip", {Text = "Prompt Clip", Default = false})
+visualGroup:AddToggle("NoFog", {Text = "No Fog", Default = false})
+visualGroup:AddToggle("LoopNoFog", {Text = "Loop No Fog", Default = false})
+visualGroup:AddToggle("FullBright", {Text = "Full Bright", Default = false})
+combatGroup:AddToggle("NPCAimAssist", {Text = "NPC Aim Assist", Default = false})
+combatGroup:AddSlider("AimDistance", {Text = "Aim Distance", Min = 25, Max = 600, Default = 600, Rounding = 0, Compact = true})
+settingsGroup:AddButton({Text = "Unload Water-Hub", Func = unload})
+settingsGroup:AddLabel("Menu key"):AddKeyPicker("MenuKeybind", {Default = "LeftAlt", NoUI = true, Text = "Menu keybind"})
+library.ToggleKeybind = options.MenuKeybind
+themeManager.BuiltInThemes = {
+    ["Default"] = {1, {FontColor = "e8f7ff", MainColor = "102838", AccentColor = "22b8cf", BackgroundColor = "071822", OutlineColor = "275166"}},
+    ["Amethyst"] = {2, {FontColor = "f5ecff", MainColor = "2b203d", AccentColor = "ad7be9", BackgroundColor = "191326", OutlineColor = "4d3b65"}},
+    ["Forest"] = {3, {FontColor = "e9ffef", MainColor = "183526", AccentColor = "58cb8b", BackgroundColor = "0e2017", OutlineColor = "315b40"}},
+    ["Rose"] = {4, {FontColor = "fff0f5", MainColor = "3b202b", AccentColor = "ef7fa6", BackgroundColor = "23131b", OutlineColor = "63364a"}},
+    ["Slate"] = {5, {FontColor = "edf1f5", MainColor = "29313a", AccentColor = "8eb2d2", BackgroundColor = "171e25", OutlineColor = "465462"}},
+    ["Solar"] = {6, {FontColor = "fff7e6", MainColor = "3b3020", AccentColor = "f5bf59", BackgroundColor = "241d12", OutlineColor = "675239"}},
+    ["Crimson"] = {7, {FontColor = "fff1f1", MainColor = "382022", AccentColor = "e3656a", BackgroundColor = "211416", OutlineColor = "60383c"}},
+    ["Frost"] = {8, {FontColor = "eafcff", MainColor = "24343e", AccentColor = "8bdde9", BackgroundColor = "14232b", OutlineColor = "3d5c69"}},
+    ["Lavender"] = {9, {FontColor = "f6f2ff", MainColor = "302c42", AccentColor = "b9a2f4", BackgroundColor = "1c1a2b", OutlineColor = "554d70"}},
+    ["Graphite"] = {10, {FontColor = "f5f5f5", MainColor = "252525", AccentColor = "86a9ff", BackgroundColor = "141414", OutlineColor = "444444"}}
+}
+themeManager:SetLibrary(library)
+saveManager:SetLibrary(library)
+saveManager:IgnoreThemeSettings()
+saveManager:SetIgnoreIndexes({"MenuKeybind"})
+themeManager:SetDefaultTheme({AccentColor = Color3.fromRGB(55, 155, 225)})
+themeManager:SetFolder("Water-Hub")
+saveManager:SetFolder("Water-Hub")
+saveManager:SetSubFolder("ST Blockade Battlefront")
+themeManager:ApplyToTab(tabs.Settings)
+saveManager:BuildConfigSection(tabs.Settings)
+local function bind(model)
+    character = model
+    humanoid = model:WaitForChild("Humanoid")
+    root = model:WaitForChild("HumanoidRootPart")
+    baseSpeed = humanoid.WalkSpeed
+    speedApplied = false
+end
+if player.Character then task.spawn(bind, player.Character) end
+table.insert(connections, player.CharacterAdded:Connect(bind))
+local function updatePrompt(prompt)
+    local original = originalPrompts[prompt]
+    if not original then
+        original = {hold = prompt.HoldDuration, distance = prompt.MaxActivationDistance, lineOfSight = prompt.RequiresLineOfSight}
+        originalPrompts[prompt] = original
+    end
+    prompt.HoldDuration = toggles.InstantPrompt.Value and 0 or original.hold
+    prompt.MaxActivationDistance = original.distance * (toggles.MultiplyPromptDistance.Value and options.PromptMultiplier.Value or 1)
+    prompt.RequiresLineOfSight = toggles.PromptClip.Value and false or original.lineOfSight
+end
+local function updatePrompts()
+    for _, descendant in ipairs(workspace:GetDescendants()) do
+        if descendant:IsA("ProximityPrompt") then updatePrompt(descendant) end
+    end
+end
+toggles.InstantPrompt:OnChanged(updatePrompts)
+toggles.MultiplyPromptDistance:OnChanged(updatePrompts)
+toggles.PromptClip:OnChanged(updatePrompts)
+options.PromptMultiplier:OnChanged(updatePrompts)
+local function applyFog()
+    local enabled = toggles.NoFog.Value or toggles.LoopNoFog.Value
+    Lighting.FogEnd = enabled and 10000000 or originalLighting.fogEnd
+    for _, descendant in ipairs(Lighting:GetDescendants()) do
+        if descendant:IsA("Atmosphere") then
+            if originalAtmospheres[descendant] == nil then originalAtmospheres[descendant] = descendant.Density end
+            descendant.Density = enabled and 0 or originalAtmospheres[descendant]
+        end
+    end
+end
+local function applyFullBright()
+    if toggles.FullBright.Value then
+        Lighting.Brightness = 3
+        Lighting.Ambient = Color3.new(1, 1, 1)
+        Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+        Lighting.ClockTime = 14
+        Lighting.GlobalShadows = false
+    else
+        Lighting.Brightness = originalLighting.brightness
+        Lighting.Ambient = originalLighting.ambient
+        Lighting.OutdoorAmbient = originalLighting.outdoorAmbient
+        Lighting.ClockTime = originalLighting.clockTime
+        Lighting.GlobalShadows = originalLighting.globalShadows
+    end
+end
+toggles.NoFog:OnChanged(applyFog)
+toggles.LoopNoFog:OnChanged(applyFog)
+toggles.FullBright:OnChanged(applyFullBright)
+table.insert(connections, workspace.DescendantAdded:Connect(function(descendant)
+    if descendant:IsA("ProximityPrompt") then updatePrompt(descendant) end
+end))
+local function isHostileNPC(model)
+    local name = string.lower(model.Name)
+    if model:GetAttribute("Passive") == true or model:GetAttribute("Friendly") == true or model:GetAttribute("IsFriendly") == true or model:GetAttribute("Neutral") == true then return false end
+    if CollectionService:HasTag(model, "Passive") or CollectionService:HasTag(model, "Friendly") or CollectionService:HasTag(model, "Ally") then return false end
+    if name:find("friendly", 1, true) or name:find("passive", 1, true) or name:find("civilian", 1, true) or name:find("ally", 1, true) then return false end
+    if model:GetAttribute("Enemy") == true or model:GetAttribute("IsEnemy") == true or model:GetAttribute("Hostile") == true then return true end
+    if CollectionService:HasTag(model, "Enemy") or CollectionService:HasTag(model, "Hostile") then return true end
+    if name:find("enemy", 1, true) or name:find("hostile", 1, true) or name:find("toilet", 1, true) or name:find("mafia", 1, true) then return true end
+    local ancestor = model.Parent
+    while ancestor and ancestor ~= workspace do
+        local ancestorName = string.lower(ancestor.Name)
+        if ancestorName:find("friendly", 1, true) or ancestorName:find("allies", 1, true) or ancestorName:find("passive", 1, true) then return false end
+        if ancestorName:find("enemies", 1, true) or ancestorName:find("hostile", 1, true) then return true end
+        ancestor = ancestor.Parent
+    end
+    return false
+end
+local function isVisibleAimTarget(camera, target)
+    if not target or not target.Parent or not target:IsA("BasePart") then return false end
+    local model = target:FindFirstAncestorOfClass("Model")
+    if not model or model == character or Players:GetPlayerFromCharacter(model) or not isHostileNPC(model) then return false end
+    local targetHumanoid = model:FindFirstChildWhichIsA("Humanoid")
+    if not targetHumanoid or targetHumanoid.Health <= 0 then return false end
+    local origin = camera.CFrame.Position
+    local displacement = target.Position - origin
+    if displacement.Magnitude > options.AimDistance.Value then return false end
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    raycastParams.FilterDescendantsInstances = {character, camera}
+    local result = workspace:Raycast(origin, displacement, raycastParams)
+    return result ~= nil and result.Instance:IsDescendantOf(model)
+end
+local function findAimTarget(camera, currentTarget)
+    if not character or not character:FindFirstChildWhichIsA("Tool") then return nil end
+    if isVisibleAimTarget(camera, currentTarget) then return currentTarget end
+    local nearest, nearestDistance
+    for _, descendant in ipairs(workspace:GetDescendants()) do
+        if descendant:IsA("Humanoid") and descendant.Health > 0 then
+            local model = descendant.Parent
+            if model and model ~= character and not Players:GetPlayerFromCharacter(model) then
+                local target = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
+                if target and target:IsA("BasePart") then
+                    if isVisibleAimTarget(camera, target) then
+                        local worldDistance = (target.Position - camera.CFrame.Position).Magnitude
+                        if not nearestDistance or worldDistance < nearestDistance then
+                            nearest = target
+                            nearestDistance = worldDistance
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nearest
+end
+local aimElapsed = 0
+local aimTarget
+local function isDowned()
+    if not character or not humanoid or humanoid.Health <= 0 then return true end
+    for _, object in ipairs({character, player}) do
+        for _, name in ipairs({"Downed", "IsDowned", "Knocked", "IsKnocked", "Incapacitated"}) do
+            if object:GetAttribute(name) == true then return true end
+            local marker = object:FindFirstChild(name)
+            if marker and marker:IsA("BoolValue") and marker.Value then return true end
+        end
+    end
+    return false
+end
+table.insert(connections, RunService.RenderStepped:Connect(function(delta)
+    if not toggles.NPCAimAssist.Value or isDowned() or not character:FindFirstChildWhichIsA("Tool") then
+        aimTarget = nil
+        return
+    end
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    aimElapsed += delta
+    if aimElapsed >= 0.1 then
+        aimElapsed = 0
+        aimTarget = findAimTarget(camera, aimTarget)
+    end
+    if aimTarget and aimTarget.Parent then
+        local desired = CFrame.lookAt(camera.CFrame.Position, aimTarget.Position)
+        camera.CFrame = desired
+    end
+end))
+local elapsed = 0
+table.insert(connections, RunService.Heartbeat:Connect(function(delta)
+    if not humanoid or not root or not character or not character.Parent then return end
+    if toggles.LoopSpeed.Value then
+        if not speedApplied then baseSpeed = humanoid.WalkSpeed end
+        humanoid.WalkSpeed = (baseSpeed or 0) + options.SpeedValue.Value
+        speedApplied = true
+    elseif speedApplied and baseSpeed then
+        humanoid.WalkSpeed = baseSpeed
+        speedApplied = false
+    end
+    if toggles.RemoveAcceleration.Value then
+        local velocity = root.AssemblyLinearVelocity
+        local direction = humanoid.MoveDirection
+        local speed = humanoid.WalkSpeed
+        root.AssemblyLinearVelocity = Vector3.new(direction.X * speed, velocity.Y, direction.Z * speed)
+    end
+    elapsed += delta
+    if elapsed >= 0.25 then
+        elapsed = 0
+        updatePrompts()
+        if toggles.LoopNoFog.Value then applyFog() end
+        if toggles.FullBright.Value then applyFullBright() end
+    end
+end))
+saveManager:LoadAutoloadConfig()
+elseif universeId == 2440500124 then
 local LoadStart = tick()
 
 local GlobalEnvironment = getgenv()
@@ -110,7 +749,7 @@ local Services = setmetatable({}, {
 
 
 
--- archives and stairwell locals
+
 local TimeShowerSourceLabel
 local TimeShowerToken = 0
 local TimeShowerConnection
@@ -1253,8 +1892,8 @@ Functions.GetRandomCode = function()
 end
 
 local Window = Library:CreateWindow({
-	Title = "Water Hub",
-	Footer = "Water Hub",
+	Title = "Water-Hub",
+	Footer = "Water-Hub",
 	NotifySide = "Right",
 	ShowCustomCursor = false,
 	AutoShow = true,
@@ -1267,7 +1906,7 @@ local Window = Library:CreateWindow({
 
 
 
--- Local info tab.
+
 
 local Tabs = {
 	Info = Window:AddTab("Info", "user"),
@@ -1291,7 +1930,7 @@ local InfoUpdates = Tabs.Info:AddRightGroupbox("Updates")
 InfoUpdates:AddLabel("MODIFIED ABYSSAL HUB")
 
 local WaterSettings = Tabs.Settings:AddLeftGroupbox("Menu")
-WaterSettings:AddButton({ Text = "Unload Water Hub", Func = function() Library:Unload() end })
+WaterSettings:AddButton({ Text = "Unload Water-Hub", Func = function() Library:Unload() end })
 WaterSettings:AddToggle("ShowKeybinds", { Text = "Show keybind list", Default = false, Callback = function(Value)
     if Library.KeybindFrame then Library.KeybindFrame.Visible = Value end
 end })
@@ -1315,7 +1954,7 @@ SaveManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
 ThemeManager:SetDefaultTheme({ AccentColor = Color3.fromRGB(55, 155, 225) })
-ThemeManager:SetFolder("Water Hub")
+ThemeManager:SetFolder("Water-Hub")
 SaveManager:SetFolder("Abysall")
 SaveManager:SetSubFolder(Abysall.SavePath)
 pcall(function() ThemeManager:ApplyToTab(Tabs.Settings) end)
@@ -1599,7 +2238,7 @@ Connections.AutoCandyValveHandler = Services.RunService.Heartbeat:Connect(functi
     task.spawn(function()
         local Success, Error = pcall(CandyValve.Solve, Frame, Guide, Vault)
         if CandyValve.HeldButton then CandyValve.SetButton(CandyValve.HeldButton, false) end
-        if not Success then warn("Auto Candy Valve:", Error) end
+
         CandyValve.Busy = false
     end)
 end)
@@ -1732,7 +2371,7 @@ Toggles.SkipSeekHotel:OnChanged(function(Value)
 	if Floor ~= "Hotel" then return end
 
 	task.spawn(function()
-		print("started")
+
 
 		local currentRooms
 
@@ -1744,14 +2383,14 @@ Toggles.SkipSeekHotel:OnChanged(function(Value)
 			task.wait()
 		until currentRooms
 
-		print("got currentrooms")
+
 
 		local lastTriggerRoom = nil
 
 		while Toggles.SkipSeekHotel.Value and Floor == "Hotel" do
 			local triggerRoom = nil
 
-			print("waiting for trigger")
+
 
 			repeat
 				if not Toggles.SkipSeekHotel.Value or Floor ~= "Hotel" then
@@ -1767,7 +2406,7 @@ Toggles.SkipSeekHotel:OnChanged(function(Value)
 						local trigger = room:WaitForChild("TriggerEventCollision", 0.5)
 						if trigger then
 							triggerRoom = currentRoomNum
-							print("found trigger in", triggerRoom)
+
 						end
 					end
 				end
@@ -1781,7 +2420,7 @@ Toggles.SkipSeekHotel:OnChanged(function(Value)
 
 			while Toggles.SkipSeekHotel.Value and Floor == "Hotel" do
 				roomNum += 1
-				print("looking for room", roomNum)
+
 
 				local room
 				repeat
@@ -1793,7 +2432,7 @@ Toggles.SkipSeekHotel:OnChanged(function(Value)
 					task.wait()
 				until room
 
-				print("found room", roomNum)
+
 
 				local hasSeekArm = false
 				local assets = room:FindFirstChild("Assets")
@@ -1801,7 +2440,7 @@ Toggles.SkipSeekHotel:OnChanged(function(Value)
 					for _, child in ipairs(assets:GetChildren()) do
 						if child.Name == "Seek_Arm" then
 							hasSeekArm = true
-							print("found seek arm")
+
 							break
 						end
 					end
@@ -1816,7 +2455,7 @@ Toggles.SkipSeekHotel:OnChanged(function(Value)
 					task.wait()
 				until door
 
-				print("found door, teleporting")
+
 
 				repeat
 					if not Toggles.SkipSeekHotel.Value or Floor ~= "Hotel" then
@@ -1828,14 +2467,14 @@ Toggles.SkipSeekHotel:OnChanged(function(Value)
 					task.wait()
 				until door:GetAttribute("Opened") == true
 
-				print("door opened")
+
 
 				if hasSeekArm then
 					if not Character then
 						return
 					end
 
-					print("voiding")
+
 
 					local voidCFrame = Character:GetPivot() + Vector3.new(0, -2500, 0)
 
@@ -1860,7 +2499,7 @@ Toggles.SkipSeekHotel:OnChanged(function(Value)
 						task.wait()
 					end
 
-					print("done voiding")
+
 					break
 				end
 			end
@@ -2830,14 +3469,14 @@ Groupboxes.Debug:AddButton({
 	Text = "Get Current Floor",
 	Tooltip = "Prints the current floor to the console.",
 	Func = function()
-		print("Current Floor:", GameData:WaitForChild("Floor").Value)
+
 	end
 })
 Groupboxes.Debug:AddButton({
 	Text = "Get Current Room",
 	Tooltip = "Prints the current room number to the console.",
 	Func = function()
-		print("Current Room:", LocalPlayer:GetAttribute("CurrentRoom"))
+
 	end
 })
 Groupboxes.Debug:AddButton({
@@ -2846,7 +3485,7 @@ Groupboxes.Debug:AddButton({
 	Func = function()
 		if not Character then return end
 		local Pivot = Character:GetPivot()
-		-- Too lazy to loop this
+
 		Character:PivotTo(Pivot + Vector3.new(0, -120 - Pivot.Position.Y, 0))
 		Character:PivotTo(Pivot + Vector3.new(0, -120 - Pivot.Position.Y, 0))
 		Character:PivotTo(Pivot + Vector3.new(0, -120 - Pivot.Position.Y, 0))
@@ -3092,7 +3731,7 @@ end)
 
 
 
--- Archives
+
 
 Groupboxes.Archives_Misc = Tabs.Archives:AddRightGroupbox("Exploits / Anti")
 Groupboxes.Archives_Misc:AddToggle("AntiRansom", { Text = "Anti Ransom", Default = false, Tooltip = "Prevents 'Ransom' from attacking you." })
@@ -3399,7 +4038,7 @@ Toggles.AntiRansom:OnChanged(function(Value)
 	AntiRansom_Connection = workspace.ChildAdded:Connect(function(Child)
 		if Child.Name == "Ransom" and Toggles.AntiRansom.Value then
 			Child:Destroy()
-			print("Ransom gone hehehehehehehehe")
+
 		end
 	end)
 end)
@@ -4176,7 +4815,7 @@ Toggles.MeldRemover:OnChanged(function(State)
 					if folder then
 						for _, child in ipairs(folder:GetChildren()) do
 							if child.Name == "MeldWall"
-								or child.Name == "Boleahghth29tdgfhy2thuy2htuu259uhh3u" -- no qeustions asked
+								or child.Name == "Boleahghth29tdgfhy2thuy2htuu259uhh3u"
 							then
 								child:Destroy()
 							end
@@ -4672,7 +5311,7 @@ Toggles.DroppedItemValue:OnChanged(function(DroppedItemValue)
 	end)
 end)
 
--- hi
+
 
 Groupboxes.Exploits_BypassRight = Tabs.Exploits:AddRightGroupbox("Bypass")
 Groupboxes.Exploits_BypassRight:AddToggle("DisableAnticheat", {
@@ -4739,7 +5378,7 @@ local InfCrucifixDropTable = {
 
 
 Toggles.InfCrucifix:OnChanged(function(Value)
-	print("i allive")
+
 	local InfCrucifixRaycastParams = RaycastParams.new()
 	InfCrucifixRaycastParams.FilterType = Enum.RaycastFilterType.Blacklist
 
@@ -4794,7 +5433,7 @@ Toggles.InfCrucifix:OnChanged(function(Value)
 			task.spawn(function()
 				ReplicatedStorage.RemotesFolder.DropItem:FireServer(InfCrucifixTool)
 				task.wait(0.54)
-				print("hi")
+
 				local InfCrucifixDrops = Workspace:FindFirstChild("Drops")
 				if not InfCrucifixDrops then
 					return
@@ -4810,7 +5449,7 @@ Toggles.InfCrucifix:OnChanged(function(Value)
 					fireproximityprompt(InfCrucifixPrompt)
 				end
 			end)
-			print ("hi")
+
 			task.wait(0.6)
 		end
 	end)
@@ -5254,7 +5893,7 @@ Groupboxes.Visuals_Entities:AddToggle("ShowEntityPath", {
 })
 
 
--- i dont wanna hear it okay? i was sick okay let me be okay fuck u okay
+
 
 
 
@@ -6719,7 +7358,7 @@ Functions.HandleCharacter = function(NewCharacter)
 	Modules.Dread           = UIModules:FindFirstChild("Dread")
 	Modules.SpiderJumpscare = UIModules.SpiderJumpscare
 
-	if Toggles.RemoveScreech.Value    then Modules.Screech.Name = "Screech_Disabled" print ("screech gone") end
+    if Toggles.RemoveScreech.Value then Modules.Screech.Name = "Screech_Disabled" end
 	if Toggles.RemoveA90.Value and Modules.A90   then Modules.A90.Name = "A90_Disabled" end
 	if Toggles.RemoveDread.Value and Modules.Dread then Modules.Dread.Name = "Dread_Disabled" end
 	if Toggles.DisableTimothyJumpscare.Value then Modules.SpiderJumpscare.Name = "SpiderJumpscare_Disabled" end
@@ -8333,7 +8972,7 @@ Functions.TriggerPrompt = function(Prompt)
 	if Prompt.Parent.Name == "AlarmClock" and Functions.HasItem("AlarmClock") then return end
 	if Prompt.Parent.Name == "KeyObtainFake" or Prompt.Parent.Name == "TithingPlate" then return end
 	if Prompt.Parent.Name == "StarBottle" then return end
-    -- archives
+
 	if Prompt.parent.Name == "ArchivesStorageBox" then return end
 	if Prompt.Parent.Name == "Briefcase" then return end
 	if Prompt.Name == "SinkPrompt" or Prompt.Parent.Name == "Faucet" then return end
@@ -8348,7 +8987,7 @@ Functions.TriggerPrompt = function(Prompt)
     if Prompt.Parent.Name == "SeatPart" or Prompt.Name == "SeatPrompt" then return end
 
 
-	-- Stairwell
+
 	if Prompt.Parent.Name == "StairwellScrapper" then return end
 	if Prompt.Name == "PortraitDupePrompt" or Prompt.Parent.Name == "MirrorTool" then return end
 	if Prompt.Name == "LaptopPrompt" or Prompt.Parent.Name == "SecretLaptop" then return end
@@ -8759,4 +9398,5 @@ while not Globals.MainUI do task.wait() end
 
 SaveManager:LoadAutoloadConfig()
 Window:SelectTab(1)
-Functions.Notify({ Title = "Water Hub loaded", Body = "Press '" .. tostring(Options.MenuKeybind.Value) .. "' to open the UI." })
+Functions.Notify({ Title = "Water-Hub loaded", Body = "Press '" .. tostring(Options.MenuKeybind.Value) .. "' to open the UI." })
+end
